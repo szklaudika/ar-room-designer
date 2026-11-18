@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Linq;
-using RoomDesigner;
 using TMPro;
 using Unity.XR.CoreUtils;
 using UnityEditor;
@@ -9,8 +8,6 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
-using UnityEngine.Rendering;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
@@ -19,23 +16,19 @@ using InputTrackedPoseDriver = UnityEngine.InputSystem.XR.TrackedPoseDriver;
 namespace RoomDesigner.EditorTools
 {
     /// <summary>
-    /// Menu Tools → Room Designer → Vytvoriť scénu detekcie.
-    /// Vytvorí (alebo prepíše) scénu RoomDetection, prefab plochy, materiály a pridá scénu do Build Settings.
+    /// Menu Tools → Room Designer → Vytvoriť scénu.
+    /// Vytvorí (alebo prepíše) scénu RoomDetection so všetkým: AR, detekcia plôch, menu s nábytkom,
+    /// gestá, uloženie návrhu. Assety pripraví RoomDesignerAssetBuilder.
     /// </summary>
     public static class RoomDetectionSceneSetup
     {
-        const string Root = "Assets/_RoomDesigner";
-        const string ScenesFolder = Root + "/Scenes";
-        const string PrefabsFolder = Root + "/Prefabs";
-        const string MaterialsFolder = Root + "/Materials";
-
+        const string ScenesFolder = RoomDesignerAssetBuilder.Root + "/Scenes";
         const string ScenePath = ScenesFolder + "/RoomDetection.unity";
-        const string PlanePrefabPath = PrefabsFolder + "/RoomPlane.prefab";
-        const string CubePrefabPath = PrefabsFolder + "/TestCube.prefab";
-        const string PlaneMaterialPath = MaterialsFolder + "/RoomPlane.mat";
-        const string CubeMaterialPath = MaterialsFolder + "/TestCube.mat";
 
-        [MenuItem("Tools/Room Designer/Vytvoriť scénu detekcie")]
+        static readonly Color ButtonColor = new Color(1f, 1f, 1f, 0.92f);
+        static readonly Color ButtonTextColor = new Color(0.12f, 0.16f, 0.22f);
+
+        [MenuItem("Tools/Room Designer/Vytvoriť scénu")]
         public static void CreateScene()
         {
             // Nech sa nestratia neuložené zmeny v práve otvorenej scéne.
@@ -44,26 +37,37 @@ namespace RoomDesigner.EditorTools
 
             try
             {
-                EnsureFolder(ScenesFolder);
-                EnsureFolder(PrefabsFolder);
-                EnsureFolder(MaterialsFolder);
-
-                var planeMaterial = CreateOrUpdatePlaneMaterial();
-                var cubeMaterial = CreateOrUpdateCubeMaterial();
-                var planePrefab = CreatePlanePrefab(planeMaterial);
-                var cubePrefab = CreateCubePrefab(cubeMaterial);
+                RoomDesignerAssetBuilder.EnsureFolder(ScenesFolder);
+                var assets = RoomDesignerAssetBuilder.BuildAll();
 
                 var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
                 CreateLight();
                 CreateARSession();
-                var origin = CreateXROrigin(planePrefab);
+                var origin = CreateXROrigin(assets.planePrefab);
                 var planeManager = origin.GetComponent<ARPlaneManager>();
                 var raycastManager = origin.GetComponent<ARRaycastManager>();
+                var anchorManager = origin.GetComponent<ARAnchorManager>();
+                var classifier = origin.GetComponent<RoomPlaneClassifier>();
 
                 CreateEventSystem();
-                CreateStatusUI(planeManager);
-                CreateRoomDesignerObject(planeManager, raycastManager, cubePrefab);
+
+                var designerGo = new GameObject("Room Designer");
+                var controller = designerGo.AddComponent<RoomDesignerController>();
+                var planeToggle = designerGo.AddComponent<PlaneVisibilityToggle>();
+                SetRef(planeToggle, "planeManager", planeManager);
+
+                var canvas = CreateCanvas();
+                CreateStatusPanel(canvas, planeManager, classifier);
+                var hint = CreateDesignerPanel(canvas, controller, planeToggle, assets.catalog);
+
+                SetRef(controller, "raycastManager", raycastManager);
+                SetRef(controller, "planeManager", planeManager);
+                SetRef(controller, "anchorManager", anchorManager);
+                SetRef(controller, "classifier", classifier);
+                SetRef(controller, "arCamera", origin.Camera);
+                SetRef(controller, "catalog", assets.catalog);
+                SetRef(controller, "hintText", hint);
 
                 EditorSceneManager.MarkSceneDirty(scene);
                 if (!EditorSceneManager.SaveScene(scene, ScenePath))
@@ -75,7 +79,7 @@ namespace RoomDesigner.EditorTools
                 AddSceneToBuildSettingsFirst(ScenePath);
                 AssetDatabase.SaveAssets();
 
-                Selection.activeGameObject = origin.gameObject;
+                Selection.activeGameObject = designerGo;
                 Debug.Log($"[Room Designer] Scéna vytvorená: {ScenePath} (prvá v Build Settings).");
             }
             catch (System.Exception e)
@@ -85,118 +89,7 @@ namespace RoomDesigner.EditorTools
             }
         }
 
-        // ---------------------------------------------------------------- Materiály
-
-        static Material CreateOrUpdatePlaneMaterial()
-        {
-            var shader = FindShader("Universal Render Pipeline/Unlit");
-            var material = LoadOrCreateMaterial(PlaneMaterialPath, shader);
-            material.shader = shader;
-            PlaneColorByAlignment.MakeTransparent(material);
-            SetColor(material, new Color(0.6f, 0.6f, 0.6f, 0.3f));
-            EditorUtility.SetDirty(material);
-            return material;
-        }
-
-        static Material CreateOrUpdateCubeMaterial()
-        {
-            var shader = FindShader("Universal Render Pipeline/Lit");
-            var material = LoadOrCreateMaterial(CubeMaterialPath, shader);
-            material.shader = shader;
-            SetColor(material, new Color(1f, 0.55f, 0.1f, 1f));
-            EditorUtility.SetDirty(material);
-            return material;
-        }
-
-        static Shader FindShader(string name)
-        {
-            var shader = Shader.Find(name);
-            if (shader == null)
-                throw new System.InvalidOperationException(
-                    $"Shader '{name}' sa nenašiel. Je v projekte nainštalovaný URP (com.unity.render-pipelines.universal)?");
-            return shader;
-        }
-
-        static Material LoadOrCreateMaterial(string path, Shader shader)
-        {
-            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (material != null)
-                return material; // prepíšeme vlastnosti, GUID ostane rovnaké
-
-            material = new Material(shader);
-            AssetDatabase.CreateAsset(material, path);
-            return material;
-        }
-
-        static void SetColor(Material material, Color color)
-        {
-            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
-            if (material.HasProperty("_Color")) material.SetColor("_Color", color);
-        }
-
-        // ---------------------------------------------------------------- Prefaby
-
-        static GameObject CreatePlanePrefab(Material planeMaterial)
-        {
-            var go = new GameObject("RoomPlane");
-            try
-            {
-                go.AddComponent<MeshFilter>();
-
-                var meshRenderer = go.AddComponent<MeshRenderer>();
-                meshRenderer.sharedMaterial = planeMaterial;
-                meshRenderer.shadowCastingMode = ShadowCastingMode.Off;
-                meshRenderer.receiveShadows = false;
-
-                var line = go.AddComponent<LineRenderer>();
-                line.sharedMaterial = planeMaterial;
-                line.useWorldSpace = false;
-                line.loop = true;
-                line.widthMultiplier = 0.005f;
-                line.numCornerVertices = 2;
-                line.shadowCastingMode = ShadowCastingMode.Off;
-                line.receiveShadows = false;
-                line.positionCount = 0;
-
-                go.AddComponent<ARPlane>();
-                go.AddComponent<ARPlaneMeshVisualizer>();
-
-                var colorizer = go.AddComponent<PlaneColorByAlignment>();
-                SetSerializedReference(colorizer, "baseMaterial", planeMaterial);
-
-                // SaveAsPrefabAsset prepíše existujúci prefab a zachová jeho GUID.
-                var prefab = PrefabUtility.SaveAsPrefabAsset(go, PlanePrefabPath, out var success);
-                if (!success)
-                    throw new System.InvalidOperationException("Nepodarilo sa uložiť " + PlanePrefabPath);
-                return prefab;
-            }
-            finally
-            {
-                Object.DestroyImmediate(go);
-            }
-        }
-
-        static GameObject CreateCubePrefab(Material cubeMaterial)
-        {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            try
-            {
-                go.name = "TestCube";
-                Object.DestroyImmediate(go.GetComponent<Collider>());
-                go.GetComponent<MeshRenderer>().sharedMaterial = cubeMaterial;
-
-                var prefab = PrefabUtility.SaveAsPrefabAsset(go, CubePrefabPath, out var success);
-                if (!success)
-                    throw new System.InvalidOperationException("Nepodarilo sa uložiť " + CubePrefabPath);
-                return prefab;
-            }
-            finally
-            {
-                Object.DestroyImmediate(go);
-            }
-        }
-
-        // ---------------------------------------------------------------- Scéna
+        // ================================================================== AR
 
         static void CreateLight()
         {
@@ -237,8 +130,7 @@ namespace RoomDesigner.EditorTools
             camera.farClipPlane = 20f;
 
             // Zadná kamera (World facing) – potrebná pre detekciu plôch.
-            var cameraManager = cameraGo.GetComponent<ARCameraManager>();
-            cameraManager.requestedFacingDirection = CameraFacingDirection.World;
+            cameraGo.GetComponent<ARCameraManager>().requestedFacingDirection = CameraFacingDirection.World;
 
             var poseDriver = cameraGo.GetComponent<InputTrackedPoseDriver>();
             var positionAction = new InputAction("Position", binding: "<XRHMD>/centerEyePosition", expectedControlType: "Vector3");
@@ -257,6 +149,10 @@ namespace RoomDesigner.EditorTools
             planeManager.requestedDetectionMode = PlaneDetectionMode.Horizontal | PlaneDetectionMode.Vertical;
 
             originGo.AddComponent<ARRaycastManager>();
+            originGo.AddComponent<ARAnchorManager>();
+
+            var classifier = originGo.AddComponent<RoomPlaneClassifier>();
+            SetRef(classifier, "planeManager", planeManager);
             return origin;
         }
 
@@ -266,65 +162,184 @@ namespace RoomDesigner.EditorTools
             new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
         }
 
-        static void CreateStatusUI(ARPlaneManager planeManager)
+        // ================================================================== UI
+
+        static RectTransform CreateCanvas()
         {
             var canvasGo = new GameObject("Canvas", typeof(RectTransform), typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
             canvasGo.layer = LayerMask.NameToLayer("UI");
-            var canvas = canvasGo.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvasGo.GetComponent<Canvas>().renderMode = RenderMode.ScreenSpaceOverlay;
 
             var scaler = canvasGo.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1080f, 1920f);
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 0.5f;
-
-            // Panel hore – polopriehľadné pozadie, aby bol text čitateľný na kamere.
-            var panelGo = new GameObject("ScanStatusPanel", typeof(RectTransform), typeof(Image));
-            panelGo.layer = canvasGo.layer;
-            panelGo.transform.SetParent(canvasGo.transform, false);
-            var panelRect = panelGo.GetComponent<RectTransform>();
-            panelRect.anchorMin = new Vector2(0f, 1f);
-            panelRect.anchorMax = new Vector2(1f, 1f);
-            panelRect.pivot = new Vector2(0.5f, 1f);
-            panelRect.anchoredPosition = new Vector2(0f, -100f);
-            panelRect.sizeDelta = new Vector2(-80f, 220f);
-            panelGo.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.55f);
-
-            var textGo = new GameObject("ScanStatusText", typeof(RectTransform));
-            textGo.layer = canvasGo.layer;
-            textGo.transform.SetParent(panelGo.transform, false);
-            var textRect = textGo.GetComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.offsetMin = new Vector2(30f, 20f);
-            textRect.offsetMax = new Vector2(-30f, -20f);
-
-            var text = textGo.AddComponent<TextMeshProUGUI>();
-            text.text = "Pomaly prejdi mobilom po izbe...";
-            text.fontSize = 46f;
-            text.alignment = TextAlignmentOptions.Center;
-            text.color = Color.white;
-            text.raycastTarget = false;
-
-            var status = textGo.AddComponent<RoomScanStatus>();
-            SetSerializedReference(status, "planeManager", planeManager);
-            SetSerializedReference(status, "statusText", text);
+            return canvasGo.GetComponent<RectTransform>();
         }
 
-        static void CreateRoomDesignerObject(ARPlaneManager planeManager, ARRaycastManager raycastManager, GameObject cubePrefab)
+        static void CreateStatusPanel(RectTransform canvas, ARPlaneManager planeManager, RoomPlaneClassifier classifier)
         {
-            var go = new GameObject("Room Designer");
+            // Panel hore – stav skenovania.
+            var panel = CreateUIObject("ScanStatusPanel", canvas, typeof(Image));
+            SetAnchors(panel, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -90f), new Vector2(-80f, 170f));
+            StyleImage(panel.GetComponent<Image>(), new Color(0f, 0f, 0f, 0.55f));
 
-            var tap = go.AddComponent<TapToPlaceTest>();
-            SetSerializedReference(tap, "raycastManager", raycastManager);
-            SetSerializedReference(tap, "cubePrefab", cubePrefab);
+            var text = CreateText("ScanStatusText", panel, "Pomaly prejdi mobilom po izbe...", 40f, Color.white);
+            Stretch(text.rectTransform, new Vector2(30f, 16f), new Vector2(-30f, -16f));
 
-            var visibility = go.AddComponent<PlaneVisibilityToggle>();
-            SetSerializedReference(visibility, "planeManager", planeManager);
+            var status = text.gameObject.AddComponent<RoomScanStatus>();
+            SetRef(status, "planeManager", planeManager);
+            SetRef(status, "classifier", classifier);
+            SetRef(status, "statusText", text);
         }
 
-        // ---------------------------------------------------------------- Pomocné
+        static TMP_Text CreateDesignerPanel(RectTransform canvas, RoomDesignerController controller,
+            PlaneVisibilityToggle planeToggle, PlaceableCatalog catalog)
+        {
+            // Panel dole: nápoveda, akčné tlačidlá a vodorovne posúvateľné menu objektov.
+            var panel = CreateUIObject("DesignerPanel", canvas, typeof(Image));
+            SetAnchors(panel, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(0f, 470f));
+            panel.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.6f);
+
+            var hint = CreateText("HintText", panel, "Vyber objekt z menu dole", 34f, Color.white);
+            SetAnchors(hint.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -12f), new Vector2(-48f, 66f));
+
+            // Akčné tlačidlá
+            var actions = CreateUIObject("ActionRow", panel, typeof(HorizontalLayoutGroup));
+            SetAnchors(actions, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -88f), new Vector2(-32f, 104f));
+            var actionLayout = actions.GetComponent<HorizontalLayoutGroup>();
+            actionLayout.spacing = 12f;
+            actionLayout.childControlWidth = actionLayout.childControlHeight = true;
+            actionLayout.childForceExpandWidth = actionLayout.childForceExpandHeight = true;
+
+            AddActionButton(actions, "Zmazať", DesignerActionButton.ActionType.DeleteSelected, controller, planeToggle);
+            AddActionButton(actions, "Skryť plochy", DesignerActionButton.ActionType.TogglePlanes, controller, planeToggle);
+            AddActionButton(actions, "Uložiť", DesignerActionButton.ActionType.Save, controller, planeToggle);
+            AddActionButton(actions, "Načítať", DesignerActionButton.ActionType.Load, controller, planeToggle);
+            AddActionButton(actions, "Vymazať všetko", DesignerActionButton.ActionType.ClearAll, controller, planeToggle);
+
+            // Menu objektov (posúvateľné do strán)
+            var scroll = CreateUIObject("CatalogScroll", panel, typeof(Image), typeof(ScrollRect));
+            SetAnchors(scroll, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 36f), new Vector2(0f, 214f));
+            scroll.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0f); // neviditeľné, ale chytá ťahanie
+
+            var viewport = CreateUIObject("Viewport", scroll, typeof(RectMask2D));
+            Stretch(viewport, Vector2.zero, Vector2.zero);
+
+            var content = CreateUIObject("Content", viewport, typeof(HorizontalLayoutGroup), typeof(ContentSizeFitter));
+            content.anchorMin = new Vector2(0f, 0f);
+            content.anchorMax = new Vector2(0f, 1f);
+            content.pivot = new Vector2(0f, 0.5f);
+            content.anchoredPosition = Vector2.zero;
+            content.sizeDelta = Vector2.zero;
+            var contentLayout = content.GetComponent<HorizontalLayoutGroup>();
+            contentLayout.padding = new RectOffset(24, 24, 6, 6);
+            contentLayout.spacing = 16f;
+            contentLayout.childAlignment = TextAnchor.MiddleLeft;
+            contentLayout.childControlWidth = contentLayout.childControlHeight = true;
+            contentLayout.childForceExpandWidth = contentLayout.childForceExpandHeight = false;
+            content.GetComponent<ContentSizeFitter>().horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var scrollRect = scroll.GetComponent<ScrollRect>();
+            scrollRect.viewport = viewport;
+            scrollRect.content = content;
+            scrollRect.horizontal = true;
+            scrollRect.vertical = false;
+            scrollRect.movementType = ScrollRect.MovementType.Clamped;
+
+            for (int i = 0; i < catalog.Count; i++)
+            {
+                var entry = catalog.Get(i);
+                var button = CreateButton(content, $"Item_{entry.id}", entry.displayName, 32f, out var label);
+                var layout = button.gameObject.AddComponent<LayoutElement>();
+                layout.preferredWidth = 230f;
+                layout.preferredHeight = 196f;
+
+                var catalogButton = button.gameObject.AddComponent<CatalogButton>();
+                catalogButton.Configure(controller, i, label, button.GetComponent<Image>());
+            }
+
+            return hint;
+        }
+
+        static void AddActionButton(RectTransform parent, string text, DesignerActionButton.ActionType action,
+            RoomDesignerController controller, PlaneVisibilityToggle planeToggle)
+        {
+            var button = CreateButton(parent, $"Action_{action}", text, 27f, out var label);
+            var actionButton = button.gameObject.AddComponent<DesignerActionButton>();
+            actionButton.Configure(action, controller, planeToggle, label);
+        }
+
+        static Button CreateButton(RectTransform parent, string name, string text, float fontSize, out TextMeshProUGUI label)
+        {
+            var rect = CreateUIObject(name, parent, typeof(Image), typeof(Button));
+            var image = rect.GetComponent<Image>();
+            StyleImage(image, ButtonColor);
+
+            var button = rect.GetComponent<Button>();
+            button.targetGraphic = image;
+            var colors = button.colors;
+            colors.disabledColor = new Color(0.6f, 0.6f, 0.6f, 0.45f);
+            button.colors = colors;
+
+            label = CreateText("Label", rect, text, fontSize, ButtonTextColor);
+            Stretch(label.rectTransform, new Vector2(8f, 6f), new Vector2(-8f, -6f));
+            return button;
+        }
+
+        static TextMeshProUGUI CreateText(string name, RectTransform parent, string text, float fontSize, Color color)
+        {
+            var rect = CreateUIObject(name, parent);
+            var tmp = rect.gameObject.AddComponent<TextMeshProUGUI>();
+            tmp.text = text;
+            tmp.fontSize = fontSize;
+            tmp.color = color;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.raycastTarget = false;
+            return tmp;
+        }
+
+        static RectTransform CreateUIObject(string name, Transform parent, params System.Type[] components)
+        {
+            var types = new List<System.Type> { typeof(RectTransform) };
+            types.AddRange(components);
+            var go = new GameObject(name, types.ToArray());
+            go.layer = LayerMask.NameToLayer("UI");
+            go.transform.SetParent(parent, false);
+            return go.GetComponent<RectTransform>();
+        }
+
+        static void StyleImage(Image image, Color color)
+        {
+            image.color = color;
+            // Zaoblený sprite zo štandardného UI Unity (ak je k dispozícii).
+            var sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+            if (sprite != null)
+            {
+                image.sprite = sprite;
+                image.type = Image.Type.Sliced;
+            }
+        }
+
+        static void SetAnchors(RectTransform rect, Vector2 min, Vector2 max, Vector2 pivot, Vector2 position, Vector2 size)
+        {
+            rect.anchorMin = min;
+            rect.anchorMax = max;
+            rect.pivot = pivot;
+            rect.anchoredPosition = position;
+            rect.sizeDelta = size;
+        }
+
+        static void Stretch(RectTransform rect, Vector2 offsetMin, Vector2 offsetMax)
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = offsetMin;
+            rect.offsetMax = offsetMax;
+        }
+
+        // ================================================================== Pomocné
 
         static void AddSceneToBuildSettingsFirst(string scenePath)
         {
@@ -334,7 +349,7 @@ namespace RoomDesigner.EditorTools
             EditorBuildSettings.scenes = scenes.ToArray();
         }
 
-        static void SetSerializedReference(Object target, string propertyName, Object value)
+        static void SetRef(Object target, string propertyName, Object value)
         {
             var so = new SerializedObject(target);
             var property = so.FindProperty(propertyName);
@@ -346,19 +361,6 @@ namespace RoomDesigner.EditorTools
 
             property.objectReferenceValue = value;
             so.ApplyModifiedPropertiesWithoutUndo();
-        }
-
-        static void EnsureFolder(string path)
-        {
-            if (AssetDatabase.IsValidFolder(path))
-                return;
-
-            var parent = System.IO.Path.GetDirectoryName(path)?.Replace('\\', '/');
-            var name = System.IO.Path.GetFileName(path);
-            if (!string.IsNullOrEmpty(parent) && !AssetDatabase.IsValidFolder(parent))
-                EnsureFolder(parent);
-
-            AssetDatabase.CreateFolder(parent, name);
         }
     }
 }
