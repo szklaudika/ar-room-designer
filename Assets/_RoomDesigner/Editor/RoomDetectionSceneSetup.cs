@@ -42,6 +42,13 @@ namespace RoomDesigner.EditorTools
 
                 var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
+                // NewScene uvoľní z pamäte assety, na ktoré nič neodkazuje (napr. práve vytvorený katalóg).
+                // Preto ich načítame znova zo súboru, inak by v scéne zostal prázdny odkaz.
+                assets.catalog = AssetDatabase.LoadAssetAtPath<PlaceableCatalog>(RoomDesignerAssetBuilder.CatalogPath);
+                assets.planePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(RoomDesignerAssetBuilder.PlanePrefabPath);
+                if (assets.catalog == null || assets.planePrefab == null)
+                    throw new System.InvalidOperationException("Katalóg alebo prefab plochy sa nepodarilo načítať.");
+
                 CreateLight();
                 CreateARSession();
                 var origin = CreateXROrigin(assets.planePrefab);

@@ -1,0 +1,55 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 62270a9dbd4d778438fc2bfae75e5de8, type: 3}
+  m_Name: PlaceableCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::RoomDesigner.PlaceableCatalog
+  entries:
+  - id: stol
+    displayName: "St\xF4l"
+    surface: 0
+    allowOnFurnitureSurfaces: 0
+    prefab: {fileID: 8967251833549899893, guid: 3458e78c6d80def4daacdac709603b97, type: 3}
+  - id: stolicka
+    displayName: "Stoli\u010Dka"
+    surface: 0
+    allowOnFurnitureSurfaces: 0
+    prefab: {fileID: 2619686125934870615, guid: 9d046c90bd008d84fa87bffa5c88c747, type: 3}
+  - id: gauc
+    displayName: "Gau\u010D"
+    surface: 0
+    allowOnFurnitureSurfaces: 0
+    prefab: {fileID: 4142937298248758742, guid: 0e4325fab9416b143ad5649779f816e0, type: 3}
+  - id: postel
+    displayName: "Poste\u013E"
+    surface: 0
+    allowOnFurnitureSurfaces: 0
+    prefab: {fileID: 4707947478774768457, guid: aa5a38ebc14f79f42821cc10c438cbfe, type: 3}
+  - id: lampa
+    displayName: Lampa
+    surface: 0
+    allowOnFurnitureSurfaces: 1
+    prefab: {fileID: 7224377091129955892, guid: 3a92d354cddb84d449cc55c41ef63ef6, type: 3}
+  - id: obraz_abstrakt
+    displayName: "Obraz \u2013 abstrakt"
+    surface: 1
+    allowOnFurnitureSurfaces: 0
+    prefab: {fileID: 645470124728695353, guid: 8709c3fe22522bb409d9c4e90a303688, type: 3}
+  - id: obraz_krajina
+    displayName: "Obraz \u2013 krajina"
+    surface: 1
+    allowOnFurnitureSurfaces: 0
+    prefab: {fileID: 1723436472724182238, guid: c71eb7a119bfc0743a08115e430a19b7, type: 3}
+  - id: okno
+    displayName: Okno
+    surface: 1
+    allowOnFurnitureSurfaces: 0
+    prefab: {fileID: 7290408085014527693, guid: c25b11487e51fd042af7017831a1e87e, type: 3}

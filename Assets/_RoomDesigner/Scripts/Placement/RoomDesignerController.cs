@@ -104,7 +104,13 @@ namespace RoomDesigner
         /// <summary>Vyberie položku z menu (opätovné ťuknutie výber zruší).</summary>
         public void SelectCatalogItem(int index)
         {
-            if (catalog == null || catalog.Get(index) == null)
+            if (catalog == null)
+            {
+                Debug.LogError("[Room Designer] RoomDesignerController nemá priradený katalóg (PlaceableCatalog).");
+                ShowMessage("Chyba: chýba katalóg objektov – spusti znova Tools → Room Designer → Vytvoriť scénu");
+                return;
+            }
+            if (catalog.Get(index) == null)
                 return;
 
             SelectedCatalogIndex = SelectedCatalogIndex == index ? -1 : index;

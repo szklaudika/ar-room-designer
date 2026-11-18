@@ -243,6 +243,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RoomDesigner.PlaneColorByAlignment
   floorColor: {r: 0.2, g: 0.85, b: 0.3, a: 0.35}
+  surfaceColor: {r: 1, g: 0.8, b: 0.15, a: 0.35}
   wallColor: {r: 0.2, g: 0.5, b: 1, a: 0.35}
   otherColor: {r: 0.6, g: 0.6, b: 0.6, a: 0.3}
   outlineAlpha: 0.9
