@@ -6,8 +6,8 @@ using UnityEngine.XR.ARSubsystems;
 namespace RoomDesigner
 {
     /// <summary>
-    /// Zafarbí AR plochu podľa jej orientácie:
-    /// podlaha (HorizontalUp) = zelená, stena (Vertical) = modrá, strop a ostatné = sivá.
+    /// Zafarbí AR plochu podľa toho, čo predstavuje (RoomPlaneClassifier):
+    /// podlaha = zelená, stôl/polica = žltá, stena = modrá, strop a ostatné = sivá.
     /// Patrí na prefab, ktorý používa ARPlaneManager.
     /// </summary>
     [RequireComponent(typeof(ARPlane))]
@@ -19,6 +19,7 @@ namespace RoomDesigner
 
         [Header("Farby (alfa = priehľadnosť)")]
         [SerializeField] Color floorColor = new Color(0.2f, 0.85f, 0.3f, 0.35f);
+        [SerializeField] Color surfaceColor = new Color(1f, 0.8f, 0.15f, 0.35f);
         [SerializeField] Color wallColor = new Color(0.2f, 0.5f, 1f, 0.35f);
         [SerializeField] Color otherColor = new Color(0.6f, 0.6f, 0.6f, 0.3f);
 
@@ -33,7 +34,7 @@ namespace RoomDesigner
         LineRenderer m_LineRenderer;
         Material m_FillMaterial;
         Material m_LineMaterial;
-        PlaneAlignment? m_AppliedAlignment;
+        PlaneKind? m_AppliedKind;
 
         void Awake()
         {
@@ -60,8 +61,8 @@ namespace RoomDesigner
 
         void Update()
         {
-            // Orientácia sa môže zmeniť pri prvých aktualizáciách plochy – kontrola je lacná.
-            if (m_AppliedAlignment != m_Plane.alignment)
+            // Druh plochy sa môže zmeniť (napr. keď sa nájde nižšia podlaha, zo „stola“ sa stane podlaha a naopak).
+            if (m_AppliedKind != RoomPlaneClassifier.KindOf(m_Plane))
                 ApplyColor(force: false);
         }
 
@@ -71,13 +72,14 @@ namespace RoomDesigner
             if (m_LineMaterial != null) Destroy(m_LineMaterial);
         }
 
-        public Color GetColorFor(PlaneAlignment alignment)
+        public Color GetColorFor(PlaneKind kind)
         {
-            switch (alignment)
+            switch (kind)
             {
-                case PlaneAlignment.HorizontalUp: return floorColor;
-                case PlaneAlignment.Vertical: return wallColor;
-                default: return otherColor; // HorizontalDown (strop), NotAxisAligned, None
+                case PlaneKind.Floor: return floorColor;
+                case PlaneKind.Surface: return surfaceColor;
+                case PlaneKind.Wall: return wallColor;
+                default: return otherColor; // strop, šikmé plochy
             }
         }
 
@@ -86,12 +88,12 @@ namespace RoomDesigner
             if (m_Plane == null || m_FillMaterial == null)
                 return;
 
-            var alignment = m_Plane.alignment;
-            if (!force && m_AppliedAlignment == alignment)
+            var kind = RoomPlaneClassifier.KindOf(m_Plane);
+            if (!force && m_AppliedKind == kind)
                 return;
 
-            m_AppliedAlignment = alignment;
-            var color = GetColorFor(alignment);
+            m_AppliedKind = kind;
+            var color = GetColorFor(kind);
             SetMaterialColor(m_FillMaterial, color);
 
             if (m_LineMaterial != null)

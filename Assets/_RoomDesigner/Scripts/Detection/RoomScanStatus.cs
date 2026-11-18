@@ -1,28 +1,30 @@
 using TMPro;
 using UnityEngine;
 using UnityEngine.XR.ARFoundation;
-using UnityEngine.XR.ARSubsystems;
 
 namespace RoomDesigner
 {
     /// <summary>
-    /// Sleduje nájdené plochy (ARPlaneManager.trackablesChanged) a v UI ukazuje stav skenovania izby.
+    /// Sleduje nájdené plochy a v UI ukazuje stav skenovania izby.
+    /// Počíta len väčšie plochy (malé kúsky stien sa nezapočítajú) a stoly/police nepočíta ako podlahu.
     /// </summary>
     public class RoomScanStatus : MonoBehaviour
     {
         public enum ScanState { Scanning, FloorFound, FloorAndWallFound }
 
         [SerializeField] ARPlaneManager planeManager;
+        [SerializeField] RoomPlaneClassifier classifier;
         [SerializeField] TMP_Text statusText;
 
         [Header("Texty")]
         [SerializeField] string scanningMessage = "Pomaly prejdi mobilom po izbe...";
-        [SerializeField] string floorFoundMessage = "Podlaha nájdená";
-        [SerializeField] string readyMessage = "Podlaha aj stena nájdená – môžeš začať";
+        [SerializeField] string floorFoundMessage = "Podlaha nájdená – nájdi ešte stenu";
+        [SerializeField] string readyMessage = "Podlaha aj stena nájdená";
 
         public ScanState State { get; private set; } = ScanState.Scanning;
         public int FloorCount { get; private set; }
         public int WallCount { get; private set; }
+        public int SurfaceCount { get; private set; }
 
         /// <summary>Do UI pôjde "✓", ak ho font vie zobraziť; inak náhradný text.</summary>
         string m_CheckMark = "✓";
@@ -31,6 +33,8 @@ namespace RoomDesigner
         {
             if (planeManager == null)
                 planeManager = FindAnyObjectByType<ARPlaneManager>();
+            if (classifier == null)
+                classifier = FindAnyObjectByType<RoomPlaneClassifier>();
             if (statusText == null)
                 statusText = GetComponent<TMP_Text>();
 
@@ -43,42 +47,50 @@ namespace RoomDesigner
 
         void OnEnable()
         {
-            if (planeManager != null)
+            // S klasifikátorom čakáme na jeho udalosť, aby bola výška podlahy už prepočítaná.
+            if (classifier != null)
+                classifier.Changed += Recount;
+            else if (planeManager != null)
                 planeManager.trackablesChanged.AddListener(OnPlanesChanged);
             Recount();
         }
 
         void OnDisable()
         {
+            if (classifier != null)
+                classifier.Changed -= Recount;
             if (planeManager != null)
                 planeManager.trackablesChanged.RemoveListener(OnPlanesChanged);
         }
 
-        void OnPlanesChanged(ARTrackablesChangedEventArgs<ARPlane> args)
-        {
-            // Pri pridaní/odobratí/zmene sa počty prepočítajú z aktuálneho zoznamu plôch.
-            Recount();
-        }
+        void OnPlanesChanged(ARTrackablesChangedEventArgs<ARPlane> args) => Recount();
 
         void Recount()
         {
-            int floors = 0, walls = 0;
+            int floors = 0, walls = 0, surfaces = 0;
 
             if (planeManager != null)
             {
                 foreach (var plane in planeManager.trackables)
                 {
-                    // Plochy zlúčené do inej (subsumed) nepočítame dvakrát.
-                    if (plane.subsumedBy != null || plane.trackingState == TrackingState.None)
+                    bool significant = classifier != null
+                        ? classifier.IsSignificant(plane)
+                        : RoomPlaneClassifier.IsActive(plane);
+                    if (!significant)
                         continue;
 
-                    if (plane.alignment == PlaneAlignment.HorizontalUp) floors++;
-                    else if (plane.alignment == PlaneAlignment.Vertical) walls++;
+                    switch (classifier != null ? classifier.Classify(plane) : RoomPlaneClassifier.FromAlignment(plane.alignment))
+                    {
+                        case PlaneKind.Floor: floors++; break;
+                        case PlaneKind.Wall: walls++; break;
+                        case PlaneKind.Surface: surfaces++; break;
+                    }
                 }
             }
 
             FloorCount = floors;
             WallCount = walls;
+            SurfaceCount = surfaces;
             State = floors > 0 && walls > 0 ? ScanState.FloorAndWallFound
                   : floors > 0 ? ScanState.FloorFound
                   : ScanState.Scanning;
@@ -99,7 +111,7 @@ namespace RoomDesigner
                 default: headline = scanningMessage; break;
             }
 
-            statusText.text = $"{headline}\n<size=75%>Podlahy: {FloorCount}   Steny: {WallCount}</size>";
+            statusText.text = $"{headline}\n<size=75%>Podlaha: {FloorCount}   Steny: {WallCount}   Stoly/police: {SurfaceCount}</size>";
         }
     }
 }
