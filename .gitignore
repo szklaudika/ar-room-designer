@@ -76,3 +76,8 @@ ignore.conf
 .DS_Store*
 Thumbs.db
 Desktop.ini
+
+# Výstupy buildu, ak sa build uloží do koreňa projektu
+.utmp/
+*_BurstDebugInformation_DoNotShip/
+*_BackUpThisFolder_ButDontShipItWithYourGame/
