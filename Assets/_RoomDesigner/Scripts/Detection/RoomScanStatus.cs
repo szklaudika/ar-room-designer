@@ -38,12 +38,13 @@ namespace RoomDesigner
             if (statusText == null)
                 statusText = GetComponent<TMP_Text>();
 
-            if (statusText != null && statusText.font != null &&
-                !statusText.font.HasCharacter('✓', searchFallbacks: true, tryAddCharacter: true))
-            {
-                m_CheckMark = "(OK)";
-            }
+            m_CheckMark = CheckMarkFor(statusText);
         }
+
+        /// <summary>"✓", ak ho font vie zobraziť, inak náhradný text.</summary>
+        public static string CheckMarkFor(TMP_Text text) =>
+            text != null && text.font != null &&
+            !text.font.HasCharacter('✓', searchFallbacks: true, tryAddCharacter: true) ? "(OK)" : "✓";
 
         void OnEnable()
         {

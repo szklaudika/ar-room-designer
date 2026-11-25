@@ -1,5 +1,7 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.XR.ARFoundation;
+using UnityEngine.XR.ARSubsystems;
 
 namespace RoomDesigner
 {
@@ -14,7 +16,8 @@ namespace RoomDesigner
     public class PlaceableObject : MonoBehaviour
     {
         [SerializeField] string itemId;
-        [SerializeField] PlacementSurface surface;
+        [FormerlySerializedAs("surface")]
+        [SerializeField] PlacementCategory category;
 
         [Tooltip("Materiál obrysu pri výbere.")]
         [SerializeField] Material highlightMaterial;
@@ -22,26 +25,32 @@ namespace RoomDesigner
         [SerializeField] float highlightWidth = 0.01f;
 
         [Tooltip("Povolený rozsah zmeny veľkosti (1 = reálna veľkosť).")]
-        [SerializeField] Vector2 scaleLimits = new Vector2(0.5f, 2f);
+        [SerializeField] Vector2 scaleLimits = new Vector2(0.3f, 3f);
 
         LineRenderer m_Outline;
 
         public string ItemId => itemId;
-        public PlacementSurface Surface => surface;
+        public PlacementCategory Category => category;
+
+        /// <summary>Obraz a okno patria na stenu, nábytok na vodorovnú plochu.</summary>
+        public bool IsWallObject => category != PlacementCategory.Nabytok;
         public bool IsSelected { get; private set; }
 
-        /// <summary>AR kotva, ku ktorej je objekt pripnutý (môže byť null).</summary>
+        /// <summary>AR kotva, ku ktorej je objekt pripnutý (rodič objektu, môže byť null).</summary>
         public ARAnchor Anchor { get; set; }
 
-        /// <summary>Os, okolo ktorej sa objekt otáča dvoma prstami (normála plochy).</summary>
-        public Vector3 SurfaceNormal => surface == PlacementSurface.Floor ? Vector3.up : transform.forward;
+        /// <summary>AR plocha, na ktorej objekt je.</summary>
+        public TrackableId PlaneId { get; set; }
+
+        /// <summary>Normála plochy, na ktorej objekt je.</summary>
+        public Vector3 SurfaceNormal => IsWallObject ? transform.forward : Vector3.up;
 
         public float UniformScale => transform.localScale.x;
 
-        public void Configure(string id, PlacementSurface placementSurface, Material highlight)
+        public void Configure(string id, PlacementCategory placementCategory, Material highlight)
         {
             itemId = id;
-            surface = placementSurface;
+            category = placementCategory;
             highlightMaterial = highlight;
         }
 
