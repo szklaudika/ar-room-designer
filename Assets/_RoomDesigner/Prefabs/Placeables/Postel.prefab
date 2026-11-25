@@ -608,11 +608,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RoomDesigner.PlaceableObject
   itemId: postel
-  surface: 0
+  category: 0
   highlightMaterial: {fileID: 2100000, guid: 85810f73c12673e4fb54594b1a78ea63, type: 2}
   highlightColor: {r: 1, g: 0.6, b: 0.1, a: 1}
   highlightWidth: 0.01
-  scaleLimits: {x: 0.5, y: 2}
+  scaleLimits: {x: 0.3, y: 3}
 --- !u!1 &9178265580058244569
 GameObject:
   m_ObjectHideFlags: 0

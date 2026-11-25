@@ -39,6 +39,9 @@ namespace RoomDesigner
             public string displayName;
 
             public PlaceableObject prefab;
+
+            [Tooltip("Ikona v menu (nepovinná, biela na priehľadnom pozadí).")]
+            public Texture2D icon;
         }
 
         [SerializeField] List<Entry> entries = new List<Entry>();

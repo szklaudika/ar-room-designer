@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 23237b1c70fd42b4691e50da0a81d29d, type: 3}
+  m_Name: PaintingLibrary
+  m_EditorClassIdentifier: Assembly-CSharp::RoomDesigner.PaintingLibrary
+  entries:
+  - displayName: Abstrakt
+    texture: {fileID: 2800000, guid: 39c7fd98a4297d140ac6b09c05e24fc1, type: 3}
+  - displayName: Mozaika
+    texture: {fileID: 2800000, guid: c01aa74dccea7b2448887168c39ed9b6, type: 3}
+  - displayName: "Z\xE1pad slnka"
+    texture: {fileID: 2800000, guid: 13c1534f2316d6840811695db910cd2b, type: 3}
+  - displayName: Bozk
+    texture: {fileID: 2800000, guid: 85a9f0d9b7df466f8edc29158eb8d354, type: 3}
+  - displayName: Hviezdna noc
+    texture: {fileID: 2800000, guid: 5a347b5bf3e14d3f983dcb36cea4a95c, type: 3}
+  - displayName: "Kompoz\xEDcia VIII"
+    texture: {fileID: 2800000, guid: 8bc2b80e40ec478fadc676f2993b3d8b, type: 3}
+  - displayName: "Lekn\xE1"
+    texture: {fileID: 2800000, guid: 9c0d9aaba7564a718df40990661dcf48, type: 3}
+  - displayName: "Diev\u010Da s perlou"
+    texture: {fileID: 2800000, guid: f410e216b1ec42f9a5cd78b4016851f7, type: 3}
+  - displayName: "Ve\u013Ek\xE1 vlna"
+    texture: {fileID: 2800000, guid: 0dd813290d6242549172308f24c1a92f, type: 3}

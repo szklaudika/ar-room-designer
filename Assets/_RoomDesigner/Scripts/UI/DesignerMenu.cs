@@ -29,8 +29,13 @@ namespace RoomDesigner
         [SerializeField] Button itemTemplate;
         [SerializeField] GameObject deleteButton;
         [SerializeField] TMP_Text planesLabel;
-        [SerializeField] Color normalColor = new Color(1f, 1f, 1f, 0.92f);
-        [SerializeField] Color selectedColor = new Color(1f, 0.6f, 0.1f, 1f);
+        [SerializeField] Color itemColor = Color.white;
+        [SerializeField] Color tabColor = Color.clear;
+        [SerializeField] Color textColor = new Color(0.24f, 0.21f, 0.19f);
+        [SerializeField] Color selectedColor = new Color(0.76f, 0.42f, 0.31f);
+        [SerializeField] Color selectedTextColor = Color.white;
+
+        const float IconScale = 0.7f;
 
         readonly Dictionary<PlaceableItem, Image> m_Items = new Dictionary<PlaceableItem, Image>();
         PlacementCategory m_Tab;
@@ -73,7 +78,7 @@ namespace RoomDesigner
                 case PlacementCategory.Nabytok:
                     foreach (var entry in furniture.Entries)
                         if (entry.prefab != null)
-                            AddItem(category, entry.displayName, entry.prefab, null);
+                            AddItem(category, entry.displayName, entry.prefab, null, entry.icon);
                     break;
                 case PlacementCategory.Obraz:
                     AddTextures(category, paintings, paintingPrefab);
@@ -94,7 +99,7 @@ namespace RoomDesigner
                     AddItem(category, entry.displayName, prefab, entry.texture);
         }
 
-        void AddItem(PlacementCategory category, string displayName, PlaceableObject prefab, Texture2D texture)
+        void AddItem(PlacementCategory category, string displayName, PlaceableObject prefab, Texture2D texture, Texture2D icon = null)
         {
             var item = new PlaceableItem
             {
@@ -111,11 +116,14 @@ namespace RoomDesigner
             label.text = displayName;
 
             var thumbnail = button.GetComponentInChildren<RawImage>(true);
-            if (texture != null)
+            var image = texture != null ? texture : icon;
+            if (image != null)
             {
-                thumbnail.texture = texture;
+                thumbnail.texture = image;
                 var fitter = thumbnail.GetComponent<AspectRatioFitter>();
-                fitter.aspectRatio = (float)texture.width / texture.height;
+                fitter.aspectRatio = (float)image.width / image.height;
+                if (texture == null)
+                    thumbnail.transform.parent.localScale = Vector3.one * IconScale;
             }
             else
             {
@@ -131,12 +139,25 @@ namespace RoomDesigner
         void Refresh()
         {
             foreach (var pair in m_Items)
-                pair.Value.color = pair.Key == placement.SelectedItem ? selectedColor : normalColor;
+            {
+                bool selected = pair.Key == placement.SelectedItem;
+                Style(pair.Value, selected, itemColor);
+
+                // Ikona nábytku má farbu textu, obrázky ostávajú bez zafarbenia.
+                if (pair.Key.texture == null)
+                    pair.Value.GetComponentInChildren<RawImage>(true).color = selected ? selectedTextColor : textColor;
+            }
 
             for (int i = 0; i < tabs.Length; i++)
-                tabs[i].image.color = i == (int)m_Tab ? selectedColor : normalColor;
+                Style(tabs[i].image, i == (int)m_Tab, tabColor);
 
             deleteButton.SetActive(placement.SelectedObject != null);
+        }
+
+        void Style(Image background, bool selected, Color normalColor)
+        {
+            background.color = selected ? selectedColor : normalColor;
+            background.GetComponentInChildren<TMP_Text>(true).color = selected ? selectedTextColor : textColor;
         }
     }
 }

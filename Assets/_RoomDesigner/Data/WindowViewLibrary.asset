@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ce6a4fc7c8f6fb8418cc90aed334ed2a, type: 3}
+  m_Name: WindowViewLibrary
+  m_EditorClassIdentifier: Assembly-CSharp::RoomDesigner.WindowViewLibrary
+  entries:
+  - displayName: Hory
+    texture: {fileID: 2800000, guid: 656abf30751a6cc41a9988694ddf2f2b, type: 3}
+  - displayName: Mesto
+    texture: {fileID: 2800000, guid: 3661f878fcb3d184083c3cb42c7a7d3a, type: 3}
+  - displayName: More
+    texture: {fileID: 2800000, guid: 62ba554816e8661489c9b69aab21dc46, type: 3}

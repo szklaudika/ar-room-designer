@@ -43,6 +43,7 @@ namespace RoomDesigner.EditorTools
             EnsureFolder(PlaceablesFolder);
             EnsureFolder(DataFolder);
 
+            UiSprites.BuildAll();
             var m = BuildMaterials();
             BuildPlanePrefab(m.plane);
             BuildCatalog(m);
@@ -212,6 +213,9 @@ namespace RoomDesigner.EditorTools
             foreach (var entry in defaults)
                 if (!catalog.Entries.Exists(e => e.id == entry.id))
                     catalog.Entries.Add(entry);
+            foreach (var entry in catalog.Entries)
+                if (entry.icon == null)
+                    entry.icon = UiSprites.LoadTexture(entry.id);
             EditorUtility.SetDirty(catalog);
         }
 

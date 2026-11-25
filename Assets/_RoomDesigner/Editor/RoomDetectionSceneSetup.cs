@@ -27,8 +27,13 @@ namespace RoomDesigner.EditorTools
         const string ScenesFolder = RoomDesignerAssetBuilder.Root + "/Scenes";
         const string ScenePath = ScenesFolder + "/RoomDetection.unity";
 
-        static readonly Color ButtonColor = new Color(1f, 1f, 1f, 0.92f);
-        static readonly Color ButtonTextColor = new Color(0.12f, 0.16f, 0.22f);
+        // Teplá paleta: krémová, hnedá, terakota.
+        static readonly Color PanelColor = new Color(0.98f, 0.96f, 0.93f, 0.97f);
+        static readonly Color TrackColor = new Color(0.91f, 0.87f, 0.82f);
+        static readonly Color TextColor = new Color(0.24f, 0.21f, 0.19f);
+        static readonly Color MutedTextColor = new Color(0.45f, 0.40f, 0.36f);
+        static readonly Color DangerColor = new Color(0.72f, 0.23f, 0.22f);
+        static readonly Color ShadowColor = new Color(0.15f, 0.1f, 0.07f, 0.35f);
 
         [MenuItem("Tools/Room Designer/Vytvoriť \u2215 aktualizovať scénu")]
         public static void CreateScene()
@@ -202,11 +207,11 @@ namespace RoomDesigner.EditorTools
         static void CreateStatusPanel(RectTransform canvas, ARPlaneManager planeManager, RoomPlaneClassifier classifier)
         {
             // Panel hore – stav skenovania.
-            var panel = CreateUIObject("ScanStatusPanel", canvas, typeof(Image));
-            SetAnchors(panel, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -90f), new Vector2(-80f, 170f));
-            StyleImage(panel.GetComponent<Image>(), new Color(0f, 0f, 0f, 0.55f));
+            var panel = CreatePanel("ScanStatusPanel", canvas, 48f);
+            SetAnchors(panel, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -90f), new Vector2(-80f, 160f));
+            CreateShadow(panel);
 
-            var text = CreateText("ScanStatusText", panel, "Pomaly prejdi mobilom po izbe...", 40f, Color.white);
+            var text = CreateText("ScanStatusText", panel, "Pomaly prejdi mobilom po izbe...", 38f, TextColor);
             Stretch(text.rectTransform, new Vector2(30f, 16f), new Vector2(-30f, -16f));
 
             var status = text.gameObject.AddComponent<RoomScanStatus>();
@@ -218,29 +223,32 @@ namespace RoomDesigner.EditorTools
         /// <summary>Panel dole: nápoveda, záložky a vodorovne posúvateľný zoznam položiek.</summary>
         static TMP_Text CreateBottomBar(RectTransform canvas, DesignerMenu menu)
         {
-            var panel = CreateUIObject("BottomBar", canvas, typeof(Image));
-            SetAnchors(panel, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(0f, 470f));
-            panel.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.6f);
+            // Spodné zaoblené rohy sú schované pod okrajom obrazovky.
+            var panel = CreatePanel("BottomBar", canvas, 56f);
+            SetAnchors(panel, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, -80f), new Vector2(0f, 590f));
+            CreateShadow(panel);
 
-            var hint = CreateText("HintText", panel, "Vyber objekt z menu dole", 34f, Color.white);
-            SetAnchors(hint.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -12f), new Vector2(-48f, 66f));
+            var hint = CreateText("HintText", panel, "Vyber objekt z menu dole", 34f, MutedTextColor);
+            SetAnchors(hint.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -18f), new Vector2(-72f, 66f));
 
-            var row = CreateUIObject("Tabs", panel, typeof(HorizontalLayoutGroup));
-            SetAnchors(row, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -88f), new Vector2(-32f, 104f));
+            var row = CreateUIObject("Tabs", panel, typeof(Image), typeof(HorizontalLayoutGroup));
+            SetAnchors(row, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -96f), new Vector2(-64f, 104f));
+            StyleImage(row.GetComponent<Image>(), TrackColor, 52f);
             var rowLayout = row.GetComponent<HorizontalLayoutGroup>();
-            rowLayout.spacing = 12f;
+            rowLayout.padding = new RectOffset(8, 8, 8, 8);
+            rowLayout.spacing = 8f;
             rowLayout.childControlWidth = rowLayout.childControlHeight = true;
             rowLayout.childForceExpandWidth = rowLayout.childForceExpandHeight = true;
 
             // Poradie zodpovedá PlacementCategory.
             SetRefs(menu, "tabs",
-                CreateButton(row, "Tab_Nabytok", "Nábytok", 36f, out _),
-                CreateButton(row, "Tab_Obrazy", "Obrazy", 36f, out _),
-                CreateButton(row, "Tab_Okna", "Okná", 36f, out _));
+                CreateButton(row, "Tab_Nabytok", "Nábytok", 36f, out _, 44f),
+                CreateButton(row, "Tab_Obrazy", "Obrazy", 36f, out _, 44f),
+                CreateButton(row, "Tab_Okna", "Okná", 36f, out _, 44f));
 
             var scroll = CreateScroll("Items", panel, out var content);
             var scrollTransform = (RectTransform)scroll.transform;
-            SetAnchors(scrollTransform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 36f), new Vector2(0f, 214f));
+            SetAnchors(scrollTransform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 128f), new Vector2(0f, 246f));
             scroll.horizontal = true;
             scroll.vertical = false;
 
@@ -249,7 +257,7 @@ namespace RoomDesigner.EditorTools
             content.pivot = new Vector2(0f, 0.5f);
             content.sizeDelta = Vector2.zero;
             var layout = content.gameObject.AddComponent<HorizontalLayoutGroup>();
-            layout.padding = new RectOffset(24, 24, 6, 6);
+            layout.padding = new RectOffset(32, 32, 8, 8);
             layout.spacing = 16f;
             layout.childAlignment = TextAnchor.MiddleLeft;
             layout.childControlWidth = layout.childControlHeight = true;
@@ -257,20 +265,20 @@ namespace RoomDesigner.EditorTools
             content.gameObject.AddComponent<ContentSizeFitter>().horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
 
             // Vzor položky: náhľad hore, názov dole.
-            var item = CreateButton(content, "ItemTemplate", "Položka", 30f, out var label);
+            var item = CreateButton(content, "ItemTemplate", "Položka", 30f, out var label, 36f);
             var element = item.gameObject.AddComponent<LayoutElement>();
             element.preferredWidth = 230f;
-            element.preferredHeight = 196f;
+            element.preferredHeight = 226f;
             label.rectTransform.anchorMax = new Vector2(1f, 0.3f);
             label.enableAutoSizing = true;
             label.fontSizeMin = 18f;
-            label.fontSizeMax = 32f;
+            label.fontSizeMax = 30f;
 
             var thumbnailArea = CreateUIObject("ThumbnailArea", item.transform);
             thumbnailArea.anchorMin = new Vector2(0f, 0.3f);
             thumbnailArea.anchorMax = Vector2.one;
-            thumbnailArea.offsetMin = new Vector2(10f, 0f);
-            thumbnailArea.offsetMax = new Vector2(-10f, -10f);
+            thumbnailArea.offsetMin = new Vector2(20f, 0f);
+            thumbnailArea.offsetMax = new Vector2(-20f, -18f);
             CreateFittedImage("Thumbnail", thumbnailArea);
             item.gameObject.SetActive(false);
 
@@ -283,27 +291,44 @@ namespace RoomDesigner.EditorTools
         static void CreateSideButtons(RectTransform canvas, PlacementManager placement, DesignerMenu menu,
             SaveDesignScreenshot screenshot, DesignGallery gallery)
         {
-            float y = -280f;
-            AddSideButton("Uložiť", screenshot.Save);
-            AddSideButton("Galéria", gallery.Open);
-            var planesLabel = AddSideButton("Skryť plochy", menu.TogglePlanes);
-            AddSideButton("Vymazať všetko", placement.RequestClearAll);
+            var toolbar = CreatePanel("Toolbar", canvas, 48f);
+            SetAnchors(toolbar, Vector2.one, Vector2.one, Vector2.one, new Vector2(-40f, -290f), new Vector2(184f, 4f * 148f + 24f));
+            CreateShadow(toolbar);
 
-            var delete = CreateButton(canvas, "Button_Zmazať", "Zmazať", 36f, out var deleteLabel);
-            SetAnchors((RectTransform)delete.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 496f), new Vector2(320f, 110f));
-            delete.image.color = new Color(0.85f, 0.2f, 0.2f);
-            deleteLabel.color = Color.white;
+            float y = -12f;
+            AddSideButton("Uložiť", "Save", screenshot.Save, TextColor);
+            AddSideButton("Galéria", "Gallery", gallery.Open, TextColor);
+            var planesLabel = AddSideButton("Skryť plochy", "Planes", menu.TogglePlanes, TextColor);
+            AddSideButton("Vymazať všetko", "Clear", placement.RequestClearAll, DangerColor);
+
+            var delete = CreateButton(canvas, "Button_Zmazať", "Zmazať", 36f, out _, 55f, "Clear", DangerColor);
+            SetAnchors((RectTransform)delete.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 546f), new Vector2(320f, 110f));
             AddClick(delete, placement.DeleteSelected);
 
             SetRef(menu, "planesLabel", planesLabel);
             SetRef(menu, "deleteButton", delete.gameObject);
 
-            TMP_Text AddSideButton(string text, UnityAction action)
+            TMP_Text AddSideButton(string text, string icon, UnityAction action, Color color)
             {
-                var button = CreateButton(canvas, "Button_" + text, text, 30f, out var label);
-                SetAnchors((RectTransform)button.transform, Vector2.one, Vector2.one, Vector2.one, new Vector2(-24f, y), new Vector2(230f, 100f));
+                // Ikona hore, popis pod ňou; pozadie je vidno len pri stlačení.
+                var button = CreateButton(toolbar, "Button_" + text, text, 24f, out var label, 36f);
+                SetAnchors((RectTransform)button.transform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, y), new Vector2(164f, 140f));
+                var colors = button.colors;
+                colors.normalColor = colors.highlightedColor = colors.selectedColor = new Color(1f, 1f, 1f, 0f);
+                colors.pressedColor = TrackColor;
+                button.colors = colors;
+
+                label.color = color;
+                label.enableAutoSizing = true;
+                label.fontSizeMin = 16f;
+                label.fontSizeMax = 24f;
+                label.rectTransform.anchorMax = new Vector2(1f, 0.46f);
+
+                var iconRect = CreateIcon(button.transform, icon, color);
+                SetAnchors(iconRect, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -14f), new Vector2(60f, 60f));
+
                 AddClick(button, action);
-                y -= 116f;
+                y -= 148f;
                 return label;
             }
         }
@@ -312,12 +337,12 @@ namespace RoomDesigner.EditorTools
         {
             var panel = CreateUIObject("GalleryPanel", canvas, typeof(Image));
             Stretch(panel, Vector2.zero, Vector2.zero);
-            panel.GetComponent<Image>().color = new Color(0.1f, 0.11f, 0.13f, 1f);
+            panel.GetComponent<Image>().color = new Color(0.96f, 0.93f, 0.89f, 1f);
 
-            var title = CreateText("Title", panel, "Uložené návrhy", 48f, Color.white);
+            var title = CreateText("Title", panel, "Uložené návrhy", 52f, TextColor);
             SetAnchors(title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -100f), new Vector2(-48f, 100f));
 
-            var empty = CreateText("EmptyText", panel, "Zatiaľ tu nie sú žiadne fotky", 38f, new Color(1f, 1f, 1f, 0.7f));
+            var empty = CreateText("EmptyText", panel, "Zatiaľ tu nie sú žiadne fotky", 38f, MutedTextColor);
             Stretch(empty.rectTransform, Vector2.zero, Vector2.zero);
 
             var scroll = CreateScroll("Scroll", panel, out var content);
@@ -331,39 +356,36 @@ namespace RoomDesigner.EditorTools
             content.sizeDelta = Vector2.zero;
             var layout = content.gameObject.AddComponent<GridLayoutGroup>();
             layout.cellSize = new Vector2(280f, 560f);
-            layout.spacing = new Vector2(16f, 16f);
-            layout.padding = new RectOffset(16, 16, 16, 16);
+            layout.spacing = new Vector2(24f, 24f);
+            layout.padding = new RectOffset(32, 32, 16, 16);
             layout.childAlignment = TextAnchor.UpperCenter;
             content.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            var thumbnail = CreateButton(content, "ThumbnailTemplate", "", 10f, out var thumbnailLabel);
+            var thumbnail = CreateButton(content, "ThumbnailTemplate", "", 10f, out var thumbnailLabel, 24f);
             Object.DestroyImmediate(thumbnailLabel.gameObject);
-            thumbnail.image.color = new Color(1f, 1f, 1f, 0.08f);
             var thumbnailImage = CreateUIObject("Image", thumbnail.transform, typeof(RawImage));
-            Stretch(thumbnailImage, new Vector2(4f, 4f), new Vector2(-4f, -4f));
+            Stretch(thumbnailImage, new Vector2(12f, 12f), new Vector2(-12f, -12f));
             thumbnailImage.GetComponent<RawImage>().raycastTarget = false;
             thumbnail.gameObject.SetActive(false);
 
-            var back = CreateButton(panel, "Button_Späť", "Späť", 40f, out _);
+            var back = CreateButton(panel, "Button_Späť", "Späť", 38f, out _, 55f, "Back");
             SetAnchors((RectTransform)back.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 60f), new Vector2(400f, 110f));
             AddClick(back, gallery.Close);
 
             // Celoobrazovkový náhľad
             var full = CreateUIObject("FullView", panel, typeof(Image));
             Stretch(full, Vector2.zero, Vector2.zero);
-            full.GetComponent<Image>().color = Color.black;
+            full.GetComponent<Image>().color = new Color(0.13f, 0.11f, 0.1f);
             var fullArea = CreateUIObject("ImageArea", full);
             Stretch(fullArea, new Vector2(0f, 200f), new Vector2(0f, -80f));
             var fullImage = CreateFittedImage("Photo", fullArea);
 
-            var fullBack = CreateButton(full, "Button_Späť", "Späť", 40f, out _);
+            var fullBack = CreateButton(full, "Button_Späť", "Späť", 38f, out _, 55f, "Back");
             SetAnchors((RectTransform)fullBack.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(1f, 0f), new Vector2(-16f, 60f), new Vector2(380f, 110f));
             AddClick(fullBack, gallery.CloseFull);
 
-            var delete = CreateButton(full, "Button_ZmazaťFotku", "Zmazať fotku", 40f, out var deleteLabel);
+            var delete = CreateButton(full, "Button_ZmazaťFotku", "Zmazať fotku", 36f, out var deleteLabel, 55f, "Clear", DangerColor);
             SetAnchors((RectTransform)delete.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 0f), new Vector2(16f, 60f), new Vector2(380f, 110f));
-            delete.image.color = new Color(0.85f, 0.2f, 0.2f);
-            deleteLabel.color = Color.white;
             AddClick(delete, gallery.DeleteCurrent);
 
             full.gameObject.SetActive(false);
@@ -408,21 +430,73 @@ namespace RoomDesigner.EditorTools
         static void AddClick(Button button, UnityAction action) =>
             UnityEventTools.AddPersistentListener(button.onClick, action);
 
-        static Button CreateButton(RectTransform parent, string name, string text, float fontSize, out TextMeshProUGUI label)
+        /// <summary>Zaoblené tlačidlo; s ikonou (vľavo od textu), ak je zadaná. Farebné má biely text.</summary>
+        static Button CreateButton(RectTransform parent, string name, string text, float fontSize, out TextMeshProUGUI label,
+            float radius, string icon = null, Color? background = null)
         {
-            var rect = CreateUIObject(name, parent, typeof(Image), typeof(Button));
+            var rect = CreateUIObject(name, parent, typeof(Image), typeof(Button), typeof(PressEffect));
             var image = rect.GetComponent<Image>();
-            StyleImage(image, ButtonColor);
+            StyleImage(image, background ?? Color.white, radius);
+            var foreground = background.HasValue ? Color.white : TextColor;
 
             var button = rect.GetComponent<Button>();
             button.targetGraphic = image;
             var colors = button.colors;
-            colors.disabledColor = new Color(0.6f, 0.6f, 0.6f, 0.45f);
+            colors.pressedColor = new Color(0.88f, 0.85f, 0.82f);
+            colors.selectedColor = colors.highlightedColor = Color.white;
             button.colors = colors;
 
-            label = CreateText("Label", rect, text, fontSize, ButtonTextColor);
-            Stretch(label.rectTransform, new Vector2(8f, 6f), new Vector2(-8f, -6f));
+            label = CreateText("Label", rect, text, fontSize, foreground);
+            Stretch(label.rectTransform, new Vector2(10f, 6f), new Vector2(-10f, -6f));
+            if (icon != null)
+            {
+                // Ikona s textom spolu v strede, aj keď sa text zmení.
+                var iconRect = CreateIcon(rect, icon, foreground);
+                iconRect.SetAsFirstSibling();
+                var element = iconRect.gameObject.AddComponent<LayoutElement>();
+                element.preferredWidth = element.preferredHeight = element.minWidth = 48f;
+
+                var layout = rect.gameObject.AddComponent<HorizontalLayoutGroup>();
+                layout.spacing = 14f;
+                layout.padding = new RectOffset(16, 16, 0, 0);
+                layout.childAlignment = TextAnchor.MiddleCenter;
+                layout.childControlWidth = layout.childControlHeight = true;
+                layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+            }
             return button;
+        }
+
+        static RectTransform CreateIcon(Transform parent, string icon, Color color)
+        {
+            var rect = CreateUIObject("Icon", parent, typeof(Image));
+            var image = rect.GetComponent<Image>();
+            image.sprite = UiSprites.Load(icon);
+            image.color = color;
+            image.raycastTarget = false;
+            return rect;
+        }
+
+        static RectTransform CreatePanel(string name, RectTransform parent, float radius)
+        {
+            var rect = CreateUIObject(name, parent, typeof(Image));
+            StyleImage(rect.GetComponent<Image>(), PanelColor, radius);
+            return rect;
+        }
+
+        /// <summary>Mäkký tieň za panelom (volať až po nastavení polohy panela).</summary>
+        static void CreateShadow(RectTransform panel)
+        {
+            var rect = CreateUIObject(panel.name + "Shadow", panel.parent, typeof(Image));
+            rect.SetSiblingIndex(panel.GetSiblingIndex());
+            SetAnchors(rect, panel.anchorMin, panel.anchorMax, panel.pivot, panel.anchoredPosition, panel.sizeDelta);
+            rect.offsetMin += new Vector2(-28f, -38f);
+            rect.offsetMax += new Vector2(28f, 18f);
+
+            var image = rect.GetComponent<Image>();
+            image.sprite = UiSprites.Load("Shadow");
+            image.type = Image.Type.Sliced;
+            image.color = ShadowColor;
+            image.raycastTarget = false;
         }
 
         static TextMeshProUGUI CreateText(string name, RectTransform parent, string text, float fontSize, Color color)
@@ -447,16 +521,12 @@ namespace RoomDesigner.EditorTools
             return go.GetComponent<RectTransform>();
         }
 
-        static void StyleImage(Image image, Color color)
+        static void StyleImage(Image image, Color color, float radius)
         {
             image.color = color;
-            // Zaoblený sprite zo štandardného UI Unity (ak je k dispozícii).
-            var sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
-            if (sprite != null)
-            {
-                image.sprite = sprite;
-                image.type = Image.Type.Sliced;
-            }
+            image.sprite = UiSprites.Load("Rounded");
+            image.type = Image.Type.Sliced;
+            image.pixelsPerUnitMultiplier = UiSprites.CornerRadius / radius;
         }
 
         static void SetAnchors(RectTransform rect, Vector2 min, Vector2 max, Vector2 pivot, Vector2 position, Vector2 size)
