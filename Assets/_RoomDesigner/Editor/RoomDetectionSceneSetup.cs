@@ -3,8 +3,10 @@ using System.Linq;
 using TMPro;
 using Unity.XR.CoreUtils;
 using UnityEditor;
+using UnityEditor.Events;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
@@ -16,9 +18,9 @@ using InputTrackedPoseDriver = UnityEngine.InputSystem.XR.TrackedPoseDriver;
 namespace RoomDesigner.EditorTools
 {
     /// <summary>
-    /// Menu Tools → Room Designer → Vytvoriť scénu.
+    /// Menu Tools → Room Designer → Vytvoriť / aktualizovať scénu.
     /// Vytvorí (alebo prepíše) scénu RoomDetection so všetkým: AR, detekcia plôch, menu s nábytkom,
-    /// gestá, uloženie návrhu. Assety pripraví RoomDesignerAssetBuilder.
+    /// obrazmi a oknami, gestá, uloženie fotky a galéria. Assety pripraví RoomDesignerAssetBuilder.
     /// </summary>
     public static class RoomDetectionSceneSetup
     {
@@ -28,7 +30,7 @@ namespace RoomDesigner.EditorTools
         static readonly Color ButtonColor = new Color(1f, 1f, 1f, 0.92f);
         static readonly Color ButtonTextColor = new Color(0.12f, 0.16f, 0.22f);
 
-        [MenuItem("Tools/Room Designer/Vytvoriť scénu")]
+        [MenuItem("Tools/Room Designer/Vytvoriť \u2215 aktualizovať scénu")]
         public static void CreateScene()
         {
             // Nech sa nestratia neuložené zmeny v práve otvorenej scéne.
@@ -38,20 +40,16 @@ namespace RoomDesigner.EditorTools
             try
             {
                 RoomDesignerAssetBuilder.EnsureFolder(ScenesFolder);
-                var assets = RoomDesignerAssetBuilder.BuildAll();
+                RoomDesignerAssetBuilder.BuildAll();
 
                 var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-                // NewScene uvoľní z pamäte assety, na ktoré nič neodkazuje (napr. práve vytvorený katalóg).
-                // Preto ich načítame znova zo súboru, inak by v scéne zostal prázdny odkaz.
-                assets.catalog = AssetDatabase.LoadAssetAtPath<PlaceableCatalog>(RoomDesignerAssetBuilder.CatalogPath);
-                assets.planePrefab = AssetDatabase.LoadAssetAtPath<GameObject>(RoomDesignerAssetBuilder.PlanePrefabPath);
-                if (assets.catalog == null || assets.planePrefab == null)
-                    throw new System.InvalidOperationException("Katalóg alebo prefab plochy sa nepodarilo načítať.");
+                // Assety načítavame až po NewScene – tá uvoľní z pamäte tie, na ktoré nič neodkazuje.
+                var planePrefab = Load<GameObject>(RoomDesignerAssetBuilder.PlanePrefabPath);
 
                 CreateLight();
                 CreateARSession();
-                var origin = CreateXROrigin(assets.planePrefab);
+                var origin = CreateXROrigin(planePrefab);
                 var planeManager = origin.GetComponent<ARPlaneManager>();
                 var raycastManager = origin.GetComponent<ARRaycastManager>();
                 var anchorManager = origin.GetComponent<ARAnchorManager>();
@@ -60,21 +58,37 @@ namespace RoomDesigner.EditorTools
                 CreateEventSystem();
 
                 var designerGo = new GameObject("Room Designer");
-                var controller = designerGo.AddComponent<RoomDesignerController>();
+                var placement = designerGo.AddComponent<PlacementManager>();
                 var planeToggle = designerGo.AddComponent<PlaneVisibilityToggle>();
-                SetRef(planeToggle, "planeManager", planeManager);
+                var screenshot = designerGo.AddComponent<SaveDesignScreenshot>();
+                var gallery = designerGo.AddComponent<DesignGallery>();
+                var menu = designerGo.AddComponent<DesignerMenu>();
 
                 var canvas = CreateCanvas();
                 CreateStatusPanel(canvas, planeManager, classifier);
-                var hint = CreateDesignerPanel(canvas, controller, planeToggle, assets.catalog);
+                var hint = CreateBottomBar(canvas, menu);
+                CreateSideButtons(canvas, placement, menu, screenshot, gallery);
+                CreateGallery(canvas, gallery); // posledná, aby prekryla ostatné UI
 
-                SetRef(controller, "raycastManager", raycastManager);
-                SetRef(controller, "planeManager", planeManager);
-                SetRef(controller, "anchorManager", anchorManager);
-                SetRef(controller, "classifier", classifier);
-                SetRef(controller, "arCamera", origin.Camera);
-                SetRef(controller, "catalog", assets.catalog);
-                SetRef(controller, "hintText", hint);
+                SetRef(planeToggle, "planeManager", planeManager);
+
+                SetRef(placement, "raycastManager", raycastManager);
+                SetRef(placement, "planeManager", planeManager);
+                SetRef(placement, "anchorManager", anchorManager);
+                SetRef(placement, "arCamera", origin.Camera);
+                SetRef(placement, "hintText", hint);
+
+                SetRef(screenshot, "uiCanvas", canvas.GetComponent<Canvas>());
+                SetRef(screenshot, "planeToggle", planeToggle);
+                SetRef(screenshot, "placement", placement);
+
+                SetRef(menu, "placement", placement);
+                SetRef(menu, "planeToggle", planeToggle);
+                SetRef(menu, "furniture", Load<PlaceableCatalog>(RoomDesignerAssetBuilder.CatalogPath));
+                SetRef(menu, "paintings", Load<PaintingLibrary>(RoomDesignerAssetBuilder.PaintingLibraryPath));
+                SetRef(menu, "paintingPrefab", Load<PlaceableObject>(RoomDesignerAssetBuilder.PaintingPrefabPath));
+                SetRef(menu, "windowViews", Load<WindowViewLibrary>(RoomDesignerAssetBuilder.WindowLibraryPath));
+                SetRef(menu, "windowPrefab", Load<PlaceableObject>(RoomDesignerAssetBuilder.WindowPrefabPath));
 
                 EditorSceneManager.MarkSceneDirty(scene);
                 if (!EditorSceneManager.SaveScene(scene, ScenePath))
@@ -201,82 +215,198 @@ namespace RoomDesigner.EditorTools
             SetRef(status, "statusText", text);
         }
 
-        static TMP_Text CreateDesignerPanel(RectTransform canvas, RoomDesignerController controller,
-            PlaneVisibilityToggle planeToggle, PlaceableCatalog catalog)
+        /// <summary>Panel dole: nápoveda, záložky a vodorovne posúvateľný zoznam položiek.</summary>
+        static TMP_Text CreateBottomBar(RectTransform canvas, DesignerMenu menu)
         {
-            // Panel dole: nápoveda, akčné tlačidlá a vodorovne posúvateľné menu objektov.
-            var panel = CreateUIObject("DesignerPanel", canvas, typeof(Image));
+            var panel = CreateUIObject("BottomBar", canvas, typeof(Image));
             SetAnchors(panel, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(0f, 470f));
             panel.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.6f);
 
             var hint = CreateText("HintText", panel, "Vyber objekt z menu dole", 34f, Color.white);
             SetAnchors(hint.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -12f), new Vector2(-48f, 66f));
 
-            // Akčné tlačidlá
-            var actions = CreateUIObject("ActionRow", panel, typeof(HorizontalLayoutGroup));
-            SetAnchors(actions, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -88f), new Vector2(-32f, 104f));
-            var actionLayout = actions.GetComponent<HorizontalLayoutGroup>();
-            actionLayout.spacing = 12f;
-            actionLayout.childControlWidth = actionLayout.childControlHeight = true;
-            actionLayout.childForceExpandWidth = actionLayout.childForceExpandHeight = true;
+            var row = CreateUIObject("Tabs", panel, typeof(HorizontalLayoutGroup));
+            SetAnchors(row, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -88f), new Vector2(-32f, 104f));
+            var rowLayout = row.GetComponent<HorizontalLayoutGroup>();
+            rowLayout.spacing = 12f;
+            rowLayout.childControlWidth = rowLayout.childControlHeight = true;
+            rowLayout.childForceExpandWidth = rowLayout.childForceExpandHeight = true;
 
-            AddActionButton(actions, "Zmazať", DesignerActionButton.ActionType.DeleteSelected, controller, planeToggle);
-            AddActionButton(actions, "Skryť plochy", DesignerActionButton.ActionType.TogglePlanes, controller, planeToggle);
-            AddActionButton(actions, "Uložiť", DesignerActionButton.ActionType.Save, controller, planeToggle);
-            AddActionButton(actions, "Načítať", DesignerActionButton.ActionType.Load, controller, planeToggle);
-            AddActionButton(actions, "Vymazať všetko", DesignerActionButton.ActionType.ClearAll, controller, planeToggle);
+            // Poradie zodpovedá PlacementCategory.
+            SetRefs(menu, "tabs",
+                CreateButton(row, "Tab_Nabytok", "Nábytok", 36f, out _),
+                CreateButton(row, "Tab_Obrazy", "Obrazy", 36f, out _),
+                CreateButton(row, "Tab_Okna", "Okná", 36f, out _));
 
-            // Menu objektov (posúvateľné do strán)
-            var scroll = CreateUIObject("CatalogScroll", panel, typeof(Image), typeof(ScrollRect));
-            SetAnchors(scroll, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 36f), new Vector2(0f, 214f));
-            scroll.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0f); // neviditeľné, ale chytá ťahanie
+            var scroll = CreateScroll("Items", panel, out var content);
+            var scrollTransform = (RectTransform)scroll.transform;
+            SetAnchors(scrollTransform, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 36f), new Vector2(0f, 214f));
+            scroll.horizontal = true;
+            scroll.vertical = false;
 
-            var viewport = CreateUIObject("Viewport", scroll, typeof(RectMask2D));
-            Stretch(viewport, Vector2.zero, Vector2.zero);
-
-            var content = CreateUIObject("Content", viewport, typeof(HorizontalLayoutGroup), typeof(ContentSizeFitter));
             content.anchorMin = new Vector2(0f, 0f);
             content.anchorMax = new Vector2(0f, 1f);
             content.pivot = new Vector2(0f, 0.5f);
-            content.anchoredPosition = Vector2.zero;
             content.sizeDelta = Vector2.zero;
-            var contentLayout = content.GetComponent<HorizontalLayoutGroup>();
-            contentLayout.padding = new RectOffset(24, 24, 6, 6);
-            contentLayout.spacing = 16f;
-            contentLayout.childAlignment = TextAnchor.MiddleLeft;
-            contentLayout.childControlWidth = contentLayout.childControlHeight = true;
-            contentLayout.childForceExpandWidth = contentLayout.childForceExpandHeight = false;
-            content.GetComponent<ContentSizeFitter>().horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            var layout = content.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(24, 24, 6, 6);
+            layout.spacing = 16f;
+            layout.childAlignment = TextAnchor.MiddleLeft;
+            layout.childControlWidth = layout.childControlHeight = true;
+            layout.childForceExpandWidth = layout.childForceExpandHeight = false;
+            content.gameObject.AddComponent<ContentSizeFitter>().horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            var scrollRect = scroll.GetComponent<ScrollRect>();
-            scrollRect.viewport = viewport;
-            scrollRect.content = content;
-            scrollRect.horizontal = true;
-            scrollRect.vertical = false;
-            scrollRect.movementType = ScrollRect.MovementType.Clamped;
+            // Vzor položky: náhľad hore, názov dole.
+            var item = CreateButton(content, "ItemTemplate", "Položka", 30f, out var label);
+            var element = item.gameObject.AddComponent<LayoutElement>();
+            element.preferredWidth = 230f;
+            element.preferredHeight = 196f;
+            label.rectTransform.anchorMax = new Vector2(1f, 0.3f);
+            label.enableAutoSizing = true;
+            label.fontSizeMin = 18f;
+            label.fontSizeMax = 32f;
 
-            for (int i = 0; i < catalog.Count; i++)
-            {
-                var entry = catalog.Get(i);
-                var button = CreateButton(content, $"Item_{entry.id}", entry.displayName, 32f, out var label);
-                var layout = button.gameObject.AddComponent<LayoutElement>();
-                layout.preferredWidth = 230f;
-                layout.preferredHeight = 196f;
+            var thumbnailArea = CreateUIObject("ThumbnailArea", item.transform);
+            thumbnailArea.anchorMin = new Vector2(0f, 0.3f);
+            thumbnailArea.anchorMax = Vector2.one;
+            thumbnailArea.offsetMin = new Vector2(10f, 0f);
+            thumbnailArea.offsetMax = new Vector2(-10f, -10f);
+            CreateFittedImage("Thumbnail", thumbnailArea);
+            item.gameObject.SetActive(false);
 
-                var catalogButton = button.gameObject.AddComponent<CatalogButton>();
-                catalogButton.Configure(controller, i, label, button.GetComponent<Image>());
-            }
-
+            SetRef(menu, "scroll", scroll);
+            SetRef(menu, "itemTemplate", item);
             return hint;
         }
 
-        static void AddActionButton(RectTransform parent, string text, DesignerActionButton.ActionType action,
-            RoomDesignerController controller, PlaneVisibilityToggle planeToggle)
+        /// <summary>Tlačidlá vpravo hore a Zmazať nad spodnou lištou (len pri vybranom objekte).</summary>
+        static void CreateSideButtons(RectTransform canvas, PlacementManager placement, DesignerMenu menu,
+            SaveDesignScreenshot screenshot, DesignGallery gallery)
         {
-            var button = CreateButton(parent, $"Action_{action}", text, 27f, out var label);
-            var actionButton = button.gameObject.AddComponent<DesignerActionButton>();
-            actionButton.Configure(action, controller, planeToggle, label);
+            float y = -280f;
+            AddSideButton("Uložiť", screenshot.Save);
+            AddSideButton("Galéria", gallery.Open);
+            var planesLabel = AddSideButton("Skryť plochy", menu.TogglePlanes);
+            AddSideButton("Vymazať všetko", placement.RequestClearAll);
+
+            var delete = CreateButton(canvas, "Button_Zmazať", "Zmazať", 36f, out var deleteLabel);
+            SetAnchors((RectTransform)delete.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 496f), new Vector2(320f, 110f));
+            delete.image.color = new Color(0.85f, 0.2f, 0.2f);
+            deleteLabel.color = Color.white;
+            AddClick(delete, placement.DeleteSelected);
+
+            SetRef(menu, "planesLabel", planesLabel);
+            SetRef(menu, "deleteButton", delete.gameObject);
+
+            TMP_Text AddSideButton(string text, UnityAction action)
+            {
+                var button = CreateButton(canvas, "Button_" + text, text, 30f, out var label);
+                SetAnchors((RectTransform)button.transform, Vector2.one, Vector2.one, Vector2.one, new Vector2(-24f, y), new Vector2(230f, 100f));
+                AddClick(button, action);
+                y -= 116f;
+                return label;
+            }
         }
+
+        static void CreateGallery(RectTransform canvas, DesignGallery gallery)
+        {
+            var panel = CreateUIObject("GalleryPanel", canvas, typeof(Image));
+            Stretch(panel, Vector2.zero, Vector2.zero);
+            panel.GetComponent<Image>().color = new Color(0.1f, 0.11f, 0.13f, 1f);
+
+            var title = CreateText("Title", panel, "Uložené návrhy", 48f, Color.white);
+            SetAnchors(title.rectTransform, new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -100f), new Vector2(-48f, 100f));
+
+            var empty = CreateText("EmptyText", panel, "Zatiaľ tu nie sú žiadne fotky", 38f, new Color(1f, 1f, 1f, 0.7f));
+            Stretch(empty.rectTransform, Vector2.zero, Vector2.zero);
+
+            var scroll = CreateScroll("Scroll", panel, out var content);
+            Stretch((RectTransform)scroll.transform, new Vector2(0f, 200f), new Vector2(0f, -220f));
+            scroll.horizontal = false;
+            scroll.vertical = true;
+
+            content.anchorMin = new Vector2(0f, 1f);
+            content.anchorMax = new Vector2(1f, 1f);
+            content.pivot = new Vector2(0.5f, 1f);
+            content.sizeDelta = Vector2.zero;
+            var layout = content.gameObject.AddComponent<GridLayoutGroup>();
+            layout.cellSize = new Vector2(280f, 560f);
+            layout.spacing = new Vector2(16f, 16f);
+            layout.padding = new RectOffset(16, 16, 16, 16);
+            layout.childAlignment = TextAnchor.UpperCenter;
+            content.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var thumbnail = CreateButton(content, "ThumbnailTemplate", "", 10f, out var thumbnailLabel);
+            Object.DestroyImmediate(thumbnailLabel.gameObject);
+            thumbnail.image.color = new Color(1f, 1f, 1f, 0.08f);
+            var thumbnailImage = CreateUIObject("Image", thumbnail.transform, typeof(RawImage));
+            Stretch(thumbnailImage, new Vector2(4f, 4f), new Vector2(-4f, -4f));
+            thumbnailImage.GetComponent<RawImage>().raycastTarget = false;
+            thumbnail.gameObject.SetActive(false);
+
+            var back = CreateButton(panel, "Button_Späť", "Späť", 40f, out _);
+            SetAnchors((RectTransform)back.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 60f), new Vector2(400f, 110f));
+            AddClick(back, gallery.Close);
+
+            // Celoobrazovkový náhľad
+            var full = CreateUIObject("FullView", panel, typeof(Image));
+            Stretch(full, Vector2.zero, Vector2.zero);
+            full.GetComponent<Image>().color = Color.black;
+            var fullArea = CreateUIObject("ImageArea", full);
+            Stretch(fullArea, new Vector2(0f, 200f), new Vector2(0f, -80f));
+            var fullImage = CreateFittedImage("Photo", fullArea);
+
+            var fullBack = CreateButton(full, "Button_Späť", "Späť", 40f, out _);
+            SetAnchors((RectTransform)fullBack.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(1f, 0f), new Vector2(-16f, 60f), new Vector2(380f, 110f));
+            AddClick(fullBack, gallery.CloseFull);
+
+            var delete = CreateButton(full, "Button_ZmazaťFotku", "Zmazať fotku", 40f, out var deleteLabel);
+            SetAnchors((RectTransform)delete.transform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 0f), new Vector2(16f, 60f), new Vector2(380f, 110f));
+            delete.image.color = new Color(0.85f, 0.2f, 0.2f);
+            deleteLabel.color = Color.white;
+            AddClick(delete, gallery.DeleteCurrent);
+
+            full.gameObject.SetActive(false);
+            panel.gameObject.SetActive(false);
+
+            SetRef(gallery, "panel", panel.gameObject);
+            SetRef(gallery, "grid", content);
+            SetRef(gallery, "thumbnailTemplate", thumbnail);
+            SetRef(gallery, "emptyText", empty.gameObject);
+            SetRef(gallery, "fullView", full.gameObject);
+            SetRef(gallery, "fullImage", fullImage);
+            SetRef(gallery, "fullFitter", fullImage.GetComponent<AspectRatioFitter>());
+            SetRef(gallery, "deleteLabel", deleteLabel);
+        }
+
+        static ScrollRect CreateScroll(string name, RectTransform parent, out RectTransform content)
+        {
+            var root = CreateUIObject(name, parent, typeof(Image), typeof(ScrollRect));
+            root.GetComponent<Image>().color = Color.clear; // neviditeľné, ale chytá ťahanie
+
+            var viewport = CreateUIObject("Viewport", root, typeof(RectMask2D));
+            Stretch(viewport, Vector2.zero, Vector2.zero);
+            content = CreateUIObject("Content", viewport);
+
+            var scroll = root.GetComponent<ScrollRect>();
+            scroll.viewport = viewport;
+            scroll.content = content;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            return scroll;
+        }
+
+        /// <summary>Obrázok, ktorý sa zmestí do rodiča a zachová pomer strán.</summary>
+        static RawImage CreateFittedImage(string name, RectTransform parent)
+        {
+            var rect = CreateUIObject(name, parent, typeof(RawImage), typeof(AspectRatioFitter));
+            rect.GetComponent<AspectRatioFitter>().aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+            var image = rect.GetComponent<RawImage>();
+            image.raycastTarget = false;
+            return image;
+        }
+
+        static void AddClick(Button button, UnityAction action) =>
+            UnityEventTools.AddPersistentListener(button.onClick, action);
 
         static Button CreateButton(RectTransform parent, string name, string text, float fontSize, out TextMeshProUGUI label)
         {
@@ -354,6 +484,24 @@ namespace RoomDesigner.EditorTools
                 EditorBuildSettings.scenes.Where(s => s.path != scenePath));
             scenes.Insert(0, new EditorBuildSettingsScene(scenePath, true));
             EditorBuildSettings.scenes = scenes.ToArray();
+        }
+
+        static T Load<T>(string path) where T : Object
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<T>(path);
+            if (asset == null)
+                throw new System.InvalidOperationException("Nepodarilo sa načítať " + path);
+            return asset;
+        }
+
+        static void SetRefs(Object target, string propertyName, params Object[] values)
+        {
+            var so = new SerializedObject(target);
+            var property = so.FindProperty(propertyName);
+            property.arraySize = values.Length;
+            for (int i = 0; i < values.Length; i++)
+                property.GetArrayElementAtIndex(i).objectReferenceValue = values[i];
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         static void SetRef(Object target, string propertyName, Object value)

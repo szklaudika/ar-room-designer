@@ -13,6 +13,7 @@ namespace RoomDesigner.EditorTools
     /// zástupné modely nábytku, obrazov a okna a katalóg pre menu.
     /// Modely sú poskladané z primitív v reálnej veľkosti – neskôr sa dajú nahradiť skutočnými 3D modelmi
     /// (stačí v katalógu vymeniť prefab; prefab musí mať PlaceableObject + BoxCollider).
+    /// Vlastné položky v katalógu a knižniciach sa pri opakovanom spustení zachovajú.
     /// </summary>
     public static class RoomDesignerAssetBuilder
     {
@@ -25,32 +26,31 @@ namespace RoomDesigner.EditorTools
         public const string PlanePrefabPath = PrefabsFolder + "/RoomPlane.prefab";
         public const string CatalogPath = DataFolder + "/PlaceableCatalog.asset";
 
-        public class Result
-        {
-            public GameObject planePrefab;
-            public PlaceableCatalog catalog;
-        }
+        public const string PaintingPrefabPath = PlaceablesFolder + "/Painting.prefab";
+        public const string WindowPrefabPath = PlaceablesFolder + "/Window.prefab";
+        public const string PaintingLibraryPath = DataFolder + "/PaintingLibrary.asset";
+        public const string WindowLibraryPath = DataFolder + "/WindowViewLibrary.asset";
 
         class Mats
         {
             public Material plane, highlight, canvas;
-            public Material wood, darkWood, fabric, fabricDark, metal, mattress, blanket, lampShade, frameBlack, frameWhite, pictureBack;
+            public Material wood, darkWood, fabric, fabricDark, metal, mattress, blanket, lampShade, frameWhite;
         }
 
-        public static Result BuildAll()
+        public static void BuildAll()
         {
             EnsureFolder(MaterialsFolder);
             EnsureFolder(PlaceablesFolder);
             EnsureFolder(DataFolder);
 
             var m = BuildMaterials();
-            var result = new Result
-            {
-                planePrefab = BuildPlanePrefab(m.plane),
-                catalog = BuildCatalog(m)
-            };
+            BuildPlanePrefab(m.plane);
+            BuildCatalog(m);
+            BuildPainting(m);
+            BuildWindow(m);
+            BuildLibrary<PaintingLibrary>(PaintingLibraryPath, PlaceholderTextures.PaintingsFolder, PlaceholderTextures.CreatePaintings);
+            BuildLibrary<WindowViewLibrary>(WindowLibraryPath, PlaceholderTextures.ViewsFolder, PlaceholderTextures.CreateViews);
             AssetDatabase.SaveAssets();
-            return result;
         }
 
         // ================================================================== Materiály
@@ -68,7 +68,7 @@ namespace RoomDesigner.EditorTools
             MakeOpaque(highlight);
             SetColor(highlight, new Color(1f, 0.6f, 0.1f, 1f));
 
-            var canvas = LoadOrCreate("Canvas", unlit); // plátno obrazu/okna – textúru dodá ProceduralArtTexture
+            var canvas = LoadOrCreate("Canvas", unlit); // plátno obrazu/okna – textúru nastaví WallPainting / WindowView
             MakeOpaque(canvas);
             SetColor(canvas, Color.white);
 
@@ -85,9 +85,7 @@ namespace RoomDesigner.EditorTools
                 mattress = Lit(lit, "Mattress", new Color(0.95f, 0.95f, 0.92f), 0.2f),
                 blanket = Lit(lit, "Blanket", new Color(0.78f, 0.52f, 0.42f), 0.1f),
                 lampShade = Lit(lit, "LampShade", new Color(1f, 0.93f, 0.78f), 0.2f, 0f, new Color(0.9f, 0.75f, 0.45f)),
-                frameBlack = Lit(lit, "FrameBlack", new Color(0.08f, 0.08f, 0.08f), 0.5f),
                 frameWhite = Lit(lit, "FrameWhite", new Color(0.95f, 0.95f, 0.93f), 0.4f),
-                pictureBack = Lit(lit, "PictureBack", new Color(0.15f, 0.15f, 0.15f), 0.1f),
             };
         }
 
@@ -197,54 +195,75 @@ namespace RoomDesigner.EditorTools
 
         // ================================================================== Katalóg + modely
 
-        static PlaceableCatalog BuildCatalog(Mats m)
+        static void BuildCatalog(Mats m)
         {
-            var entries = new List<PlaceableCatalog.Entry>
+            var defaults = new[]
             {
-                Entry("stol", "Stôl", PlacementSurface.Floor, false, BuildTable(m)),
-                Entry("stolicka", "Stolička", PlacementSurface.Floor, false, BuildChair(m)),
-                Entry("gauc", "Gauč", PlacementSurface.Floor, false, BuildSofa(m)),
-                Entry("postel", "Posteľ", PlacementSurface.Floor, false, BuildBed(m)),
-                Entry("lampa", "Lampa", PlacementSurface.Floor, true, BuildLamp(m)),
-                Entry("obraz_abstrakt", "Obraz – abstrakt", PlacementSurface.Wall, false,
-                    BuildPicture(m, "Obraz_Abstrakt", "obraz_abstrakt", 0.6f, 0.8f, ProceduralArtTexture.ArtStyle.Abstract, 7)),
-                Entry("obraz_krajina", "Obraz – krajina", PlacementSurface.Wall, false,
-                    BuildPicture(m, "Obraz_Krajina", "obraz_krajina", 0.9f, 0.6f, ProceduralArtTexture.ArtStyle.Landscape, 3)),
-                Entry("okno", "Okno", PlacementSurface.Wall, false, BuildWindow(m)),
+                Entry("stol", "Stôl", BuildTable(m)),
+                Entry("stolicka", "Stolička", BuildChair(m)),
+                Entry("gauc", "Gauč", BuildSofa(m)),
+                Entry("postel", "Posteľ", BuildBed(m)),
+                Entry("lampa", "Lampa", BuildLamp(m)),
             };
 
-            var catalog = AssetDatabase.LoadAssetAtPath<PlaceableCatalog>(CatalogPath);
-            if (catalog == null)
-            {
-                catalog = ScriptableObject.CreateInstance<PlaceableCatalog>();
-                AssetDatabase.CreateAsset(catalog, CatalogPath);
-            }
-
-            catalog.SetEntries(entries);
+            var catalog = LoadOrCreateAsset<PlaceableCatalog>(CatalogPath);
+            // Katalóg je len pre nábytok; prázdne riadky by v menu nič nerobili.
+            catalog.Entries.RemoveAll(e => e.prefab == null || e.prefab.IsWallObject);
+            foreach (var entry in defaults)
+                if (!catalog.Entries.Exists(e => e.id == entry.id))
+                    catalog.Entries.Add(entry);
             EditorUtility.SetDirty(catalog);
-            return catalog;
         }
 
-        static PlaceableCatalog.Entry Entry(string id, string name, PlacementSurface surface, bool onSurfaces, PlaceableObject prefab) =>
-            new PlaceableCatalog.Entry
+        static PlaceableCatalog.Entry Entry(string id, string name, PlaceableObject prefab) =>
+            new PlaceableCatalog.Entry { id = id, displayName = name, prefab = prefab };
+
+        /// <summary>
+        /// Doplní do knižnice všetky obrázky z priečinka, ktoré v nej ešte nie sú.
+        /// Zástupné obrázky vytvorí len prvýkrát, takže zmazané sa nevrátia.
+        /// </summary>
+        static void BuildLibrary<T>(string path, string folder, Action createPlaceholders) where T : TextureLibrary
+        {
+            EnsureFolder(folder);
+            if (AssetDatabase.LoadAssetAtPath<T>(path) == null)
+                createPlaceholders();
+
+            var library = LoadOrCreateAsset<T>(path);
+            library.Entries.RemoveAll(e => e.texture == null);
+            foreach (var guid in AssetDatabase.FindAssets("t:Texture2D", new[] { folder }))
             {
-                id = id,
-                displayName = name,
-                surface = surface,
-                allowOnFurnitureSurfaces = onSurfaces,
-                prefab = prefab
-            };
+                var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GUIDToAssetPath(guid));
+                if (texture != null && !library.Entries.Exists(e => e.texture == texture))
+                    library.Entries.Add(new TextureLibrary.Entry
+                    {
+                        displayName = texture.name.Replace('_', ' '),
+                        texture = texture
+                    });
+            }
+            EditorUtility.SetDirty(library);
+        }
+
+        static T LoadOrCreateAsset<T>(string path) where T : ScriptableObject
+        {
+            var asset = AssetDatabase.LoadAssetAtPath<T>(path);
+            if (asset == null)
+            {
+                asset = ScriptableObject.CreateInstance<T>();
+                AssetDatabase.CreateAsset(asset, path);
+            }
+            return asset;
+        }
 
         // Nábytok: pivot = stred spodnej strany, predok = +Z. Rozmery v metroch.
 
-        static PlaceableObject BuildTable(Mats m) => BuildPlaceable("Stol", "stol", PlacementSurface.Floor, m, model =>
+        static PlaceableObject BuildTable(Mats m) => BuildPlaceable("Stol", "stol", PlacementCategory.Nabytok, m, model =>
         {
             Cube(model, "Top", new Vector3(0f, 0.73f, 0f), new Vector3(1.2f, 0.04f, 0.7f), m.wood);
             foreach (var (x, z) in Corners(0.54f, 0.29f))
                 Cube(model, "Leg", new Vector3(x, 0.355f, z), new Vector3(0.05f, 0.71f, 0.05f), m.darkWood);
         });
 
-        static PlaceableObject BuildChair(Mats m) => BuildPlaceable("Stolicka", "stolicka", PlacementSurface.Floor, m, model =>
+        static PlaceableObject BuildChair(Mats m) => BuildPlaceable("Stolicka", "stolicka", PlacementCategory.Nabytok, m, model =>
         {
             Cube(model, "Seat", new Vector3(0f, 0.45f, 0f), new Vector3(0.45f, 0.05f, 0.45f), m.wood);
             Cube(model, "Cushion", new Vector3(0f, 0.485f, 0.01f), new Vector3(0.40f, 0.03f, 0.40f), m.fabric);
@@ -253,7 +272,7 @@ namespace RoomDesigner.EditorTools
                 Cube(model, "Leg", new Vector3(x, 0.215f, z), new Vector3(0.04f, 0.43f, 0.04f), m.darkWood);
         });
 
-        static PlaceableObject BuildSofa(Mats m) => BuildPlaceable("Gauc", "gauc", PlacementSurface.Floor, m, model =>
+        static PlaceableObject BuildSofa(Mats m) => BuildPlaceable("Gauc", "gauc", PlacementCategory.Nabytok, m, model =>
         {
             Cube(model, "Base", new Vector3(0f, 0.22f, 0f), new Vector3(2.0f, 0.24f, 0.9f), m.fabricDark);
             Cube(model, "SeatLeft", new Vector3(-0.42f, 0.42f, 0.06f), new Vector3(0.82f, 0.16f, 0.72f), m.fabric);
@@ -265,7 +284,7 @@ namespace RoomDesigner.EditorTools
                 Cylinder(model, "Leg", new Vector3(x, 0.05f, z), new Vector3(0.05f, 0.05f, 0.05f), m.metal);
         });
 
-        static PlaceableObject BuildBed(Mats m) => BuildPlaceable("Postel", "postel", PlacementSurface.Floor, m, model =>
+        static PlaceableObject BuildBed(Mats m) => BuildPlaceable("Postel", "postel", PlacementCategory.Nabytok, m, model =>
         {
             Cube(model, "Frame", new Vector3(0f, 0.15f, 0f), new Vector3(1.5f, 0.3f, 2.1f), m.wood);
             Cube(model, "Mattress", new Vector3(0f, 0.4f, 0f), new Vector3(1.4f, 0.2f, 2.0f), m.mattress);
@@ -275,7 +294,7 @@ namespace RoomDesigner.EditorTools
             Cube(model, "Headboard", new Vector3(0f, 0.5f, -1.03f), new Vector3(1.5f, 1.0f, 0.06f), m.darkWood);
         });
 
-        static PlaceableObject BuildLamp(Mats m) => BuildPlaceable("Lampa", "lampa", PlacementSurface.Floor, m, model =>
+        static PlaceableObject BuildLamp(Mats m) => BuildPlaceable("Lampa", "lampa", PlacementCategory.Nabytok, m, model =>
         {
             Cylinder(model, "Base", new Vector3(0f, 0.015f, 0f), new Vector3(0.3f, 0.015f, 0.3f), m.metal);
             Cylinder(model, "Pole", new Vector3(0f, 0.78f, 0f), new Vector3(0.03f, 0.75f, 0.03f), m.metal);
@@ -294,46 +313,33 @@ namespace RoomDesigner.EditorTools
 
         // Objekty na stenu: pivot = stred zadnej strany (na stene), predok (+Z) smeruje do izby.
 
-        static PlaceableObject BuildPicture(Mats m, string prefabName, string id, float w, float h,
-            ProceduralArtTexture.ArtStyle style, int seed)
+        static void BuildPainting(Mats m)
         {
-            const float border = 0.035f, depth = 0.03f;
+            Transform frame = null;
             Renderer canvas = null;
-
-            var obj = BuildPlaceable(prefabName, id, PlacementSurface.Wall, m, model =>
+            BuildPlaceable("Painting", "obraz", PlacementCategory.Obraz, m, model =>
             {
-                Cube(model, "Back", new Vector3(0f, 0f, 0.005f), new Vector3(w, h, 0.01f), m.pictureBack);
-                Frame(model, w, h, border, depth, m.frameBlack);
-                canvas = Quad(model, "Canvas", new Vector3(0f, 0f, 0.0115f), new Vector2(w - 2f * border, h - 2f * border), m.canvas);
-            }, root =>
-            {
-                var art = root.AddComponent<ProceduralArtTexture>();
-                int texW = 256, texH = Mathf.RoundToInt(256f * h / w);
-                art.Configure(canvas, style, seed, new Vector2Int(texW, texH), false);
-            });
-            return obj;
+                frame = Cube(model, "Frame", Vector3.zero, Vector3.one, m.darkWood).transform;
+                canvas = Quad(model, "Canvas", Vector3.zero, Vector2.one, m.canvas);
+            }, root => root.AddComponent<WallPainting>().Configure(frame, canvas));
         }
 
-        static PlaceableObject BuildWindow(Mats m)
+        static void BuildWindow(Mats m)
         {
             const float w = 1.0f, h = 1.2f, border = 0.07f, depth = 0.06f;
             Renderer view = null;
 
-            return BuildPlaceable("Okno", "okno", PlacementSurface.Wall, m, model =>
+            BuildPlaceable("Window", "okno", PlacementCategory.Okno, m, model =>
             {
                 view = Quad(model, "View", new Vector3(0f, 0f, 0.003f), new Vector2(w - 2f * border, h - 2f * border), m.canvas);
                 Frame(model, w, h, border, depth, m.frameWhite);
                 Cube(model, "MullionV", new Vector3(0f, 0f, 0.03f), new Vector3(0.04f, h - 2f * border, 0.04f), m.frameWhite);
-                Cube(model, "MullionH", new Vector3(0f, 0.12f, 0.03f), new Vector3(w - 2f * border, 0.04f, 0.04f), m.frameWhite);
+                Cube(model, "MullionH", new Vector3(0f, 0.12f, 0.03f), new Vector3(w - 2f * border, 0.04f, 0.039f), m.frameWhite);
                 Cube(model, "Sill", new Vector3(0f, -h * 0.5f - 0.02f, 0.07f), new Vector3(w + 0.12f, 0.04f, 0.14f), m.frameWhite);
-            }, root =>
-            {
-                var art = root.AddComponent<ProceduralArtTexture>();
-                art.Configure(view, ProceduralArtTexture.ArtStyle.WindowView, 11, new Vector2Int(384, 448), true);
-            });
+            }, root => root.AddComponent<WindowView>().Configure(view));
         }
 
-        static PlaceableObject BuildPlaceable(string prefabName, string id, PlacementSurface surface, Mats m,
+        static PlaceableObject BuildPlaceable(string prefabName, string id, PlacementCategory category, Mats m,
             Action<Transform> buildModel, Action<GameObject> extra = null)
         {
             var root = new GameObject(prefabName);
@@ -350,7 +356,7 @@ namespace RoomDesigner.EditorTools
                 box.size = bounds.size;
 
                 var placeable = root.AddComponent<PlaceableObject>();
-                placeable.Configure(id, surface, m.highlight);
+                placeable.Configure(id, category, m.highlight);
 
                 extra?.Invoke(root);
 
